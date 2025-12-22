@@ -55,7 +55,7 @@ Controller *Controller::makeController(uint32_t mac0, uint32_t mac1, int port)
     return new(Mempool::alloc(sizeof(EightBitDoLite2Controller))) EightBitDoLite2Controller(mac0, mac1, port);
 }
 
-void Controller::requestReport(uint8_t type, uint8_t *buffer, size_t length)
+int Controller::requestReport(uint8_t type, uint8_t *buffer, size_t length)
 {
     static SceBtHidRequest request;
     memset(&request, 0, sizeof(SceBtHidRequest));
@@ -71,7 +71,9 @@ void Controller::requestReport(uint8_t type, uint8_t *buffer, size_t length)
     request.next   = &request;
 
     // Send the request to the controller
-    ksceBtHidTransfer(mac0, mac1, &request);
+    int ret = ksceBtHidTransfer(mac0, mac1, &request);
+    LOG("  HID transfer type=%u len=%u -> %d\n", (unsigned)type, (unsigned)length, ret);
+    return ret;
 }
 
 uint32_t Controller::calculateCrc(uint8_t *buffer, size_t length)

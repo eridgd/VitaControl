@@ -304,6 +304,13 @@ static int bluetoothCallback(int notifyId, int notifyCount, int notifyArg, void 
                 else
                     LOG("  Failed to create controller (unknown VID/PID?)\n");
             }
+            // Kick off input polling immediately. Some controllers never send any init write/feature
+            // replies, so without an initial read request we will never receive 0x0A events.
+            if (controllers[cont])
+            {
+                LOG("  Starting initial HID read...\n");
+                controllers[cont]->requestReport(HID_REQUEST_READ, buffer, sizeof(buffer));
+            }
             break;
 
         case 0x06: // Connection terminated
