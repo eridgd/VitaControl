@@ -37,6 +37,7 @@ void EightBitDoLite2Controller::processReport(uint8_t *buffer, size_t length)
     }
 
     // If we have no previous report, or the length changed, log a full snapshot once
+    bool didLog = false;
     if (!hasLast || lastLen != maxBytes)
     {
         LOG("Report snapshot: id=0x%02X len=%u\n", buffer[0], (unsigned)maxBytes);
@@ -48,6 +49,7 @@ void EightBitDoLite2Controller::processReport(uint8_t *buffer, size_t length)
                 ksceDebugPrintf("\n                 ");
         }
         ksceDebugPrintf("\n");
+        didLog = true;
     }
     else if (anyChanges)
     {
@@ -63,16 +65,30 @@ void EightBitDoLite2Controller::processReport(uint8_t *buffer, size_t length)
             first = false;
         }
         ksceDebugPrintf("\n");
+        didLog = true;
+
+        // Extra: if bytes 5-7 change, show bit-level deltas (common for button fields)
+        if (maxBytes >= 8)
+        {
+            for (size_t i = 5; i <= 7; i++)
+            {
+                if (last[i] == buffer[i]) continue;
+                uint8_t oldv = last[i];
+                uint8_t newv = buffer[i];
+                uint8_t pressed = (uint8_t)(~oldv & newv);   // bits that went 0->1
+                uint8_t released = (uint8_t)(oldv & ~newv);  // bits that went 1->0
+                LOG("Bits[%u]: old=%02X new=%02X pressed=%02X released=%02X\n",
+                    (unsigned)i, oldv, newv, pressed, released);
+            }
+        }
     }
 
-    // For diagnostic purposes, try to interpret common patterns
-    // Most controllers have buttons starting around byte 5-6 and sticks around byte 1-4
-    if (maxBytes >= 8)
+    // Only print the quick interpretation when something changed / snapshot was taken.
+    // (Avoid spamming identical lines when no deltas occur.)
+    if (didLog && maxBytes >= 8)
     {
-        LOG("Axes? LX=%02X LY=%02X RX=%02X RY=%02X\n",
-            buffer[1], buffer[2], buffer[3], buffer[4]);
-        LOG("Buttons? b5=%02X b6=%02X b7=%02X\n",
-            buffer[5], buffer[6], buffer[7]);
+        LOG("Fields: b1=%02X b2=%02X b3=%02X b4=%02X b5=%02X b6=%02X b7=%02X\n",
+            buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6], buffer[7]);
     }
 
     // Save current report as baseline for next diff
