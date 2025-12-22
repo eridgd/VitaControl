@@ -8,9 +8,18 @@
 #include <psp2kern/kernel/modulemgr.h>
 #include <psp2kern/kernel/suspend.h>
 #include <psp2kern/kernel/threadmgr.h>
+#include <psp2kern/kernel/debug.h>
 
 #include "controller.h"
 #include "mempool.h"
+
+// Logging function declaration
+extern "C" {
+    int ksceDebugPrintf(const char *fmt, ...);
+}
+
+// Logging macro
+#define LOG(...) ksceDebugPrintf("[VitaControl] " __VA_ARGS__)
 
 #define MAX_CONTROLLERS 4
 
@@ -248,6 +257,8 @@ static int bluetoothCallback(int notifyId, int notifyCount, int notifyArg, void 
     while ((ret = ksceBtReadEvent(&event, 1)) == SCE_BT_ERROR_CB_OVERFLOW);
     if (ret <= 0) return 0;
 
+    LOG("BT Event: ID=0x%02X MAC=%08X:%08X\n", event.id, event.mac0, event.mac1);
+
     int cont = -1;
 
     // Search connected controllers for the device that triggered the event
@@ -273,19 +284,30 @@ static int bluetoothCallback(int notifyId, int notifyCount, int notifyArg, void 
         }
 
         if (cont == -1)
+        {
+            LOG("  No free controller slots!\n");
             return 0;
+        }
     }
 
     // Handle the bluetooth event
     switch (event.id)
     {
         case 0x05: // Connection accepted
+            LOG("  Connection accepted (slot %d)\n", cont);
             // Try to create a controller instance for the device
             if (!controllers[cont])
+            {
                 controllers[cont] = Controller::makeController(event.mac0, event.mac1, cont);
+                if (controllers[cont])
+                    LOG("  Controller created successfully\n");
+                else
+                    LOG("  Failed to create controller (unknown VID/PID?)\n");
+            }
             break;
 
         case 0x06: // Connection terminated
+            LOG("  Connection terminated (slot %d)\n", cont);
             // Remove the controller instance for the device
             if (controllers[cont])
             {
@@ -297,6 +319,11 @@ static int bluetoothCallback(int notifyId, int notifyCount, int notifyArg, void 
         case 0x0A: // Reply to read request
             if (controllers[cont])
             {
+                // Log the first 16 bytes of the report for debugging
+                LOG("  Read report [slot %d]: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n",
+                    cont, buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6], buffer[7],
+                    buffer[8], buffer[9], buffer[10], buffer[11], buffer[12], buffer[13], buffer[14], buffer[15]);
+
                 // Process the received input report and request another
                 controllers[cont]->processReport(buffer, sizeof(buffer));
                 controllers[cont]->requestReport(HID_REQUEST_READ, buffer, sizeof(buffer));
@@ -308,11 +335,24 @@ static int bluetoothCallback(int notifyId, int notifyCount, int notifyArg, void 
                     AXIS_MOVED(c->leftY) || AXIS_MOVED(c->rightX) || AXIS_MOVED(c->rightY))
                     ksceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
             }
+            else
+            {
+                // Log raw data even when no controller object exists
+                LOG("  Read report [slot %d, NO CONTROLLER]: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n",
+                    cont, buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6], buffer[7],
+                    buffer[8], buffer[9], buffer[10], buffer[11], buffer[12], buffer[13], buffer[14], buffer[15]);
+            }
             break;
 
         case 0x0B: // Reply to write request
-        case 0x0C: // Reply to feature request
+            LOG("  Write request reply (slot %d)\n", cont);
             // Request an initial input report (write/feature requests are typically part of controller init)
+            if (controllers[cont])
+                controllers[cont]->requestReport(HID_REQUEST_READ, buffer, sizeof(buffer));
+            break;
+
+        case 0x0C: // Reply to feature request
+            LOG("  Feature request reply (slot %d)\n", cont);
             if (controllers[cont])
                 controllers[cont]->requestReport(HID_REQUEST_READ, buffer, sizeof(buffer));
             break;
@@ -348,11 +388,16 @@ extern "C"
 
 int moduleStart(SceSize args, void *argp)
 {
+    LOG("=== VitaControl starting ===\n");
+
     tai_module_info_t modInfo;
     modInfo.size = sizeof(tai_module_info_t);
 
     if (taiGetModuleInfoForKernel(KERNEL_PID, "SceBt", &modInfo) < 0)
+    {
+        LOG("Failed to get SceBt module info\n");
         return SCE_KERNEL_START_FAILED;
+    }
 
     // Hook bluetooth functions
     BIND_FUNC_OFFSET_HOOK(sceBt0x22999C8, KERNEL_PID, modInfo.modid, 0, 0x22999C8 - 0x2280000, 1);
@@ -362,7 +407,10 @@ int moduleStart(SceSize args, void *argp)
     BIND_FUNC_EXPORT_HOOK(sceCtrlGetBatteryInfo,         KERNEL_PID, "SceCtrl", TAI_ANY_LIBRARY, 0x8F9B1CE5);
 
     if (taiGetModuleInfoForKernel(KERNEL_PID, "SceCtrl", &modInfo) < 0)
+    {
+        LOG("Failed to get SceCtrl module info\n");
         return SCE_KERNEL_START_FAILED;
+    }
 
     // Hook control data functions
     BIND_FUNC_EXPORT_HOOK(ksceCtrlPeekBufferPositive, KERNEL_PID, "SceCtrl", TAI_ANY_LIBRARY, 0xEA1D3A34);
@@ -396,11 +444,14 @@ int moduleStart(SceSize args, void *argp)
     threadUid = ksceKernelCreateThread("vitacontrol_thread", callbackThread, 0x3C, 0x1000, 0, 0x10000, 0);
     ksceKernelStartThread(threadUid, 0, nullptr);
 
+    LOG("=== VitaControl started successfully ===\n");
     return SCE_KERNEL_START_SUCCESS;
 }
 
 int moduleStop(SceSize args, void *argp)
 {
+    LOG("=== VitaControl stopping ===\n");
+
     // Set the exit flag to stop the callback thread
     if (eventFlagUid > 0)
         ksceKernelSetEventFlag(eventFlagUid, FLAG_EXIT);

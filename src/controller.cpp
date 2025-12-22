@@ -1,5 +1,6 @@
 #include <cstring>
 #include <psp2kern/bt.h>
+#include <psp2kern/kernel/debug.h>
 
 #include "controller.h"
 #include "mempool.h"
@@ -9,6 +10,15 @@
 #include "controllers/xbox_one_controller.h"
 #include "controllers/xbox_one_controller_2016.h"
 #include "controllers/switch_pro_controller.h"
+#include "controllers/eightbitdo_lite2_controller.h"
+
+// Logging function declaration
+extern "C" {
+    int ksceDebugPrintf(const char *fmt, ...);
+}
+
+// Logging macro
+#define LOG(...) ksceDebugPrintf("[VitaControl] " __VA_ARGS__)
 
 inline void* operator new(std::size_t, void* __p) throw() { return __p; }
 
@@ -20,6 +30,8 @@ Controller *Controller::makeController(uint32_t mac0, uint32_t mac1, int port)
     // Get the VID and PID of the device with the given MAC address
     uint16_t id[2];
     ksceBtGetVidPid(mac0, mac1, id);
+
+    LOG("  Device VID:PID = 0x%04X:0x%04X\n", id[0], id[1]);
 
     // Match the VID and PID to a controller type, and create one if it exists
     switch ((id[0] << 16) | id[1])
@@ -37,7 +49,10 @@ Controller *Controller::makeController(uint32_t mac0, uint32_t mac1, int port)
         DECL_CONTROLLER(0x057E, 0x2009, SwitchProController);
     }
 
-    return nullptr;
+    // For unknown controllers, use the diagnostic 8BitDo Lite 2 controller
+    // This will log all data so we can reverse engineer the protocol
+    LOG("  No exact match found - using diagnostic controller for VID:PID 0x%04X:0x%04X\n", id[0], id[1]);
+    return new(Mempool::alloc(sizeof(EightBitDoLite2Controller))) EightBitDoLite2Controller(mac0, mac1, port);
 }
 
 void Controller::requestReport(uint8_t type, uint8_t *buffer, size_t length)

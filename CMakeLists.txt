@@ -22,11 +22,13 @@ add_executable(${PROJECT_NAME}
   src/controllers/xbox_one_controller.cpp
   src/controllers/xbox_one_controller_2016.cpp
   src/controllers/switch_pro_controller.cpp
+  src/controllers/eightbitdo_lite2_controller.cpp
 )
 
 target_link_libraries(${PROJECT_NAME}
   SceBtForDriver_stub
   SceCtrlForDriver_stub
+  SceDebugForDriver_stub
   SceKernelSuspendForDriver_stub
   SceSysclibForDriver_stub
   SceSysmemForDriver_stub
