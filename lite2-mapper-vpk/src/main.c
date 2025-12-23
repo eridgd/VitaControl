@@ -19,20 +19,21 @@ typedef struct Step {
 } Step;
 
 static const Step STEPS[] = {
-  {"FACE_A",      "Press FACE A (confirm / bottom button)"},
-  {"FACE_B",      "Press FACE B (cancel / right button)"},
-  {"FACE_X",      "Press FACE X (left button)"},
-  {"FACE_Y",      "Press FACE Y (top button)"},
+  // Physical button labels on the 8BitDo Lite 2 (D-input), with expected Vita mapping
+  {"A",           "Press A (expected Vita: CIRCLE)"},
+  {"B",           "Press B (expected Vita: CROSS)"},
+  {"X",           "Press X (expected Vita: TRIANGLE)"},
+  {"Y",           "Press Y (expected Vita: SQUARE)"},
 
-  {"DPAD_UP",     "Press DPAD UP"},
-  {"DPAD_RIGHT",  "Press DPAD RIGHT"},
-  {"DPAD_DOWN",   "Press DPAD DOWN"},
-  {"DPAD_LEFT",   "Press DPAD LEFT"},
+  {"DPAD_UP",     "Press D-PAD UP"},
+  {"DPAD_RIGHT",  "Press D-PAD RIGHT"},
+  {"DPAD_DOWN",   "Press D-PAD DOWN"},
+  {"DPAD_LEFT",   "Press D-PAD LEFT"},
 
-  {"L1",          "Press L1"},
-  {"R1",          "Press R1"},
-  {"L2",          "Press L2"},
-  {"R2",          "Press R2"},
+  {"L1",          "Press L1 (expected Vita: L1)"},
+  {"R1",          "Press R1 (expected Vita: R1)"},
+  {"L2",          "Press L2 (expected Vita: LTRIGGER)"},
+  {"R2",          "Press R2 (expected Vita: RTRIGGER)"},
 
   {"L3",          "Press L3 (left stick click)"},
   {"R3",          "Press R3 (right stick click)"},
@@ -40,10 +41,10 @@ static const Step STEPS[] = {
   {"START",       "Press START / PLUS"},
   {"SELECT",      "Press SELECT / MINUS"},
 
-  {"HOME",        "Press HOME (if it doesn't exit the app) - optional"},
+  {"HOME",        "Press HOME (expected Vita: PS button) - optional"},
 
-  {"STICK_L",     "Move LEFT stick around, then click it once"},
-  {"STICK_R",     "Move RIGHT stick around, then click it once"},
+  {"STICK_L",     "Move LEFT stick a bit (any direction)"},
+  {"STICK_R",     "Move RIGHT stick a bit (any direction)"},
 };
 
 static void clear_screen(void) {
