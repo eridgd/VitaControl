@@ -77,27 +77,28 @@ void SwitchProController::processReport(uint8_t *buffer, size_t length)
         if (b2 & 0x01) controlData.buttons |= SCE_CTRL_SELECT;
         if (b2 & 0x10) controlData.buttons |= SCE_CTRL_PSBUTTON;
 
-        // Stick mapping (calibrated from directional captures + on-device behavior):
+        // Stick mapping:
         //
-        // On-device testing showed a 90° rotation for both sticks (e.g. Left->Up, Up->Left).
-        // That indicates X/Y are swapped relative to our previous assignment.
+        // The Pro 3 report appears to pack 12-bit stick axes similarly to the standard Switch Pro
+        // report (0x30), starting at byte 4. Using single-byte "signed axis" guesses caused
+        // unstable/jittery behavior on-device.
         //
-        // Use signed axes, convert to unsigned by adding 0x80, and match Vita convention by
-        // inverting Y.
+        // Decode 12-bit little-endian packed axes:
+        //   lx = b4 | ((b5 & 0x0F) << 8)
+        //   ly = (b5 >> 4) | (b6 << 4)
+        //   rx = b7 | ((b8 & 0x0F) << 8)
+        //   ry = (b8 >> 4) | (b9 << 4)
         //
-        // Left stick:
-        //   X comes from byte 6, Y comes from byte 4
-        // Right stick:
-        //   X comes from byte 10, Y comes from byte 8
-        const uint8_t lx = (uint8_t)(buffer[6] + 0x80);
-        const uint8_t ly = (uint8_t)(buffer[4] + 0x80);
-        const uint8_t rx = (uint8_t)(buffer[10] + 0x80);
-        const uint8_t ry = (uint8_t)(buffer[8] + 0x80);
+        // Then scale to 0-255 by >> 4 and invert Y to match Vita convention.
+        const uint16_t lx12 = (uint16_t)buffer[4] | ((uint16_t)(buffer[5] & 0x0F) << 8);
+        const uint16_t ly12 = (uint16_t)(buffer[5] >> 4) | ((uint16_t)buffer[6] << 4);
+        const uint16_t rx12 = (uint16_t)buffer[7] | ((uint16_t)(buffer[8] & 0x0F) << 8);
+        const uint16_t ry12 = (uint16_t)(buffer[8] >> 4) | ((uint16_t)buffer[9] << 4);
 
-        controlData.leftX  = lx;
-        controlData.leftY  = (uint8_t)(0xFF - ly);
-        controlData.rightX = rx;
-        controlData.rightY = (uint8_t)(0xFF - ry);
+        controlData.leftX  = (uint8_t)(lx12 >> 4);
+        controlData.leftY  = (uint8_t)(0xFF - (uint8_t)(ly12 >> 4));
+        controlData.rightX = (uint8_t)(rx12 >> 4);
+        controlData.rightY = (uint8_t)(0xFF - (uint8_t)(ry12 >> 4));
 
         // NOTE: L3/R3 click bits weren't cleanly isolated in the captures (axis bytes changed too),
         // so we don't map stick clicks yet to avoid false positives. We can add them after one more
