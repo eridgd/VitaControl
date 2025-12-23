@@ -58,6 +58,9 @@ class SwitchProController: public Controller
         SwitchProController(uint32_t mac0, uint32_t mac1, int port);
 
         void processReport(uint8_t *buffer, size_t length);
+
+    private:
+        bool requestedStandardMode = false;
 };
 
 #endif // SWITCH_PRO_CONTROLLER_H
