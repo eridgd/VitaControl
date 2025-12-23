@@ -1,0 +1,187 @@
+#include <psp2/ctrl.h>
+#include <psp2/io/fcntl.h>
+#include <psp2/kernel/processmgr.h>
+#include <psp2/kernel/threadmgr.h>
+
+#include "debugScreen.h"
+
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#define RAW_LOG_PATH  "ux0:data/vitacontrol_8bitdo_raw.txt"
+#define OUT_LOG_PATH  "ux0:data/lite2_mapper_results.txt"
+
+typedef struct Step {
+  const char *name;
+  const char *prompt;
+} Step;
+
+static const Step STEPS[] = {
+  {"FACE_A",      "Press FACE A (confirm / bottom button)"},
+  {"FACE_B",      "Press FACE B (cancel / right button)"},
+  {"FACE_X",      "Press FACE X (left button)"},
+  {"FACE_Y",      "Press FACE Y (top button)"},
+
+  {"DPAD_UP",     "Press DPAD UP"},
+  {"DPAD_RIGHT",  "Press DPAD RIGHT"},
+  {"DPAD_DOWN",   "Press DPAD DOWN"},
+  {"DPAD_LEFT",   "Press DPAD LEFT"},
+
+  {"L1",          "Press L1"},
+  {"R1",          "Press R1"},
+  {"L2",          "Press L2"},
+  {"R2",          "Press R2"},
+
+  {"L3",          "Press L3 (left stick click)"},
+  {"R3",          "Press R3 (right stick click)"},
+
+  {"START",       "Press START / PLUS"},
+  {"SELECT",      "Press SELECT / MINUS"},
+
+  {"HOME",        "Press HOME (if it doesn't exit the app) - optional"},
+
+  {"STICK_L",     "Move LEFT stick around, then click it once"},
+  {"STICK_R",     "Move RIGHT stick around, then click it once"},
+};
+
+static void clear_screen(void) {
+  psvDebugScreenClear(0x000000);
+}
+
+static int open_out_log(void) {
+  int fd = sceIoOpen(OUT_LOG_PATH, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
+  if (fd >= 0) {
+    const char *hdr =
+      "Lite2 Mapper Results\n"
+      "Source raw log: " RAW_LOG_PATH "\n"
+      "Format: STEP_NAME\\tRAW_LINE\n\n";
+    sceIoWrite(fd, hdr, (unsigned)strlen(hdr));
+  }
+  return fd;
+}
+
+static bool read_next_line(int fd, char *out, int out_cap) {
+  // Read until newline. The kernel module writes newline-terminated records.
+  int n = 0;
+  while (n < out_cap - 1) {
+    char ch;
+    int r = sceIoRead(fd, &ch, 1);
+    if (r <= 0) {
+      return false;
+    }
+    out[n++] = ch;
+    if (ch == '\n') break;
+  }
+  out[n] = 0;
+  return true;
+}
+
+static void wait_for_new_raw_line(int raw_fd, char *line, int line_cap) {
+  // The raw log is append-only during a session.
+  // We poll until we can read a full newline-terminated line.
+  while (true) {
+    if (read_next_line(raw_fd, line, line_cap)) {
+      return;
+    }
+    // No new data yet — wait a bit and retry.
+    sceKernelDelayThread(50 * 1000);
+  }
+}
+
+static void write_step_result(int out_fd, const char *step_name, const char *raw_line) {
+  if (out_fd < 0) return;
+  sceIoWrite(out_fd, step_name, (unsigned)strlen(step_name));
+  sceIoWrite(out_fd, "\t", 1);
+  sceIoWrite(out_fd, raw_line, (unsigned)strlen(raw_line));
+}
+
+int main(void) {
+  sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
+  psvDebugScreenInit();
+
+  clear_screen();
+  psvDebugScreenPrintf("Lite2 Mapper\\n\\n");
+  psvDebugScreenPrintf("This app watches: %s\\n", RAW_LOG_PATH);
+  psvDebugScreenPrintf("and writes:       %s\\n\\n", OUT_LOG_PATH);
+  psvDebugScreenPrintf("Make sure VitaControl is installed and the controller is connected.\\n");
+  psvDebugScreenPrintf("Press X on the Vita to begin.\\n");
+
+  // Wait for Vita X to start (this is the built-in Vita buttons, not the external controller).
+  SceCtrlData pad;
+  uint32_t prev = 0;
+  while (true) {
+    sceCtrlPeekBufferPositive(0, &pad, 1);
+    uint32_t pressed = pad.buttons & ~prev;
+    prev = pad.buttons;
+    if (pressed & SCE_CTRL_CROSS) break;
+    sceKernelDelayThread(16 * 1000);
+  }
+
+  int out_fd = open_out_log();
+
+  // Open raw log and seek to end so each step captures the *next* delta line.
+  int raw_fd = sceIoOpen(RAW_LOG_PATH, SCE_O_RDONLY, 0);
+  if (raw_fd < 0) {
+    clear_screen();
+    psvDebugScreenPrintf("ERROR: couldn't open %s\\n", RAW_LOG_PATH);
+    psvDebugScreenPrintf("Is VitaControl updated and loaded?\\n");
+    psvDebugScreenPrintf("\\nPress CIRCLE to exit.\\n");
+    while (true) {
+      sceCtrlPeekBufferPositive(0, &pad, 1);
+      if (pad.buttons & SCE_CTRL_CIRCLE) break;
+      sceKernelDelayThread(16 * 1000);
+    }
+    sceKernelExitProcess(0);
+    return 0;
+  }
+
+  sceIoLseek(raw_fd, 0, SCE_SEEK_END);
+
+  const int steps_total = (int)(sizeof(STEPS) / sizeof(STEPS[0]));
+  char line[256];
+
+  for (int i = 0; i < steps_total; i++) {
+    clear_screen();
+    psvDebugScreenPrintf("Step %d / %d\\n\\n", i + 1, steps_total);
+    psvDebugScreenPrintf("%s\\n\\n", STEPS[i].prompt);
+    psvDebugScreenPrintf("Now press the button / do the action on the Lite 2.\\n");
+    psvDebugScreenPrintf("Waiting for a new raw log line...\\n");
+
+    // Wait for the kernel module to append the next delta line.
+    wait_for_new_raw_line(raw_fd, line, (int)sizeof(line));
+
+    // Show what we captured and write it to the output file.
+    psvDebugScreenPrintf("\\nCaptured:\\n%s\\n", line);
+    write_step_result(out_fd, STEPS[i].name, line);
+
+    psvDebugScreenPrintf("\\nPress X on the Vita to continue.\\n");
+    prev = 0;
+    while (true) {
+      sceCtrlPeekBufferPositive(0, &pad, 1);
+      uint32_t pressed = pad.buttons & ~prev;
+      prev = pad.buttons;
+      if (pressed & SCE_CTRL_CROSS) break;
+      sceKernelDelayThread(16 * 1000);
+    }
+  }
+
+  clear_screen();
+  psvDebugScreenPrintf("Done!\\n\\n");
+  psvDebugScreenPrintf("Results written to:\\n%s\\n\\n", OUT_LOG_PATH);
+  psvDebugScreenPrintf("Press CIRCLE (Vita) to exit.\\n");
+
+  while (true) {
+    sceCtrlPeekBufferPositive(0, &pad, 1);
+    if (pad.buttons & SCE_CTRL_CIRCLE) break;
+    sceKernelDelayThread(16 * 1000);
+  }
+
+  if (raw_fd >= 0) sceIoClose(raw_fd);
+  if (out_fd >= 0) sceIoClose(out_fd);
+  sceKernelExitProcess(0);
+  return 0;
+}
+
+
