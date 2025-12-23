@@ -77,28 +77,28 @@ void SwitchProController::processReport(uint8_t *buffer, size_t length)
         if (b2 & 0x01) controlData.buttons |= SCE_CTRL_SELECT;
         if (b2 & 0x10) controlData.buttons |= SCE_CTRL_PSBUTTON;
 
-        // Stick mapping:
+        // Stick mapping (0x3F, calibrated from mapper directional captures):
+        //  - Left stick:  X = b5 (0x80-centered), Y = b4 (signed, 0-centered)
+        //  - Right stick: X = b8 (signed, 0-centered), Y = b10 (signed, 0-centered)
         //
-        // The Pro 3 report appears to pack 12-bit stick axes similarly to the standard Switch Pro
-        // report (0x30), starting at byte 4. Using single-byte "signed axis" guesses caused
-        // unstable/jittery behavior on-device.
-        //
-        // Decode 12-bit little-endian packed axes:
-        //   lx = b4 | ((b5 & 0x0F) << 8)
-        //   ly = (b5 >> 4) | (b6 << 4)
-        //   rx = b7 | ((b8 & 0x0F) << 8)
-        //   ry = (b8 >> 4) | (b9 << 4)
-        //
-        // Then scale to 0-255 by >> 4 and invert Y to match Vita convention.
-        const uint16_t lx12 = (uint16_t)buffer[4] | ((uint16_t)(buffer[5] & 0x0F) << 8);
-        const uint16_t ly12 = (uint16_t)(buffer[5] >> 4) | ((uint16_t)buffer[6] << 4);
-        const uint16_t rx12 = (uint16_t)buffer[7] | ((uint16_t)(buffer[8] & 0x0F) << 8);
-        const uint16_t ry12 = (uint16_t)(buffer[8] >> 4) | ((uint16_t)buffer[9] << 4);
+        // Add a small deadzone to reduce idle jitter.
+        auto signedToU8 = [](uint8_t v) -> uint8_t { return (uint8_t)(v + 0x80); };
+        auto applyDeadzone = [](uint8_t v, uint8_t center, uint8_t dz) -> uint8_t {
+            int d = (int)v - (int)center;
+            if (d < 0) d = -d;
+            return (d <= dz) ? center : v;
+        };
 
-        controlData.leftX  = (uint8_t)(lx12 >> 4);
-        controlData.leftY  = (uint8_t)(0xFF - (uint8_t)(ly12 >> 4));
-        controlData.rightX = (uint8_t)(rx12 >> 4);
-        controlData.rightY = (uint8_t)(0xFF - (uint8_t)(ry12 >> 4));
+        const uint8_t lx = buffer[5];
+        const uint8_t ly = signedToU8(buffer[4]);
+        const uint8_t rx = signedToU8(buffer[8]);
+        const uint8_t ry = signedToU8(buffer[10]);
+
+        const uint8_t dz = 6;
+        controlData.leftX  = applyDeadzone(lx, 0x80, dz);
+        controlData.leftY  = (uint8_t)(0xFF - applyDeadzone(ly, 0x80, dz));
+        controlData.rightX = applyDeadzone(rx, 0x80, dz);
+        controlData.rightY = (uint8_t)(0xFF - applyDeadzone(ry, 0x80, dz));
 
         // NOTE: L3/R3 click bits weren't cleanly isolated in the captures (axis bytes changed too),
         // so we don't map stick clicks yet to avoid false positives. We can add them after one more
