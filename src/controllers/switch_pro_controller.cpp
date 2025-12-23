@@ -68,15 +68,20 @@ void SwitchProController::processReport(uint8_t *buffer, size_t length)
         if (b2 & 0x01) controlData.buttons |= SCE_CTRL_SELECT;
         if (b2 & 0x10) controlData.buttons |= SCE_CTRL_PSBUTTON;
 
-        // Best-effort stick mapping.
-        // Observed changes for left stick in buf[4]/buf[5]. Right stick in buf[8]/buf[9].
-        // Treat X as signed centered at 0 (so +128), and Y as unsigned centered at 0x80, then invert Y for Vita.
+        // Stick mapping (empirical):
+        // The initial best-effort mapping produced a 90° rotation (Right->Up, etc.).
+        // That indicates X/Y were swapped. Based on captured fields:
+        //  - left stick: b4 behaves like signed axis (0 center), b5 behaves like unsigned axis (0x80 center)
+        //  - right stick: b8 behaves like signed axis (0 center), b9 behaves like unsigned axis (0x80 center)
+        // After swap:
+        //  - X comes from the unsigned-centered byte (b5/b9)
+        //  - Y comes from the signed-centered byte (b4/b8), converted and inverted for Vita
         auto signedToU8 = [](uint8_t v) -> uint8_t { return (uint8_t)(v + 0x80); };
 
-        controlData.leftX  = signedToU8(buffer[4]);
-        controlData.leftY  = (uint8_t)(0xFF - buffer[5]);
-        controlData.rightX = signedToU8(buffer[8]);
-        controlData.rightY = (uint8_t)(0xFF - buffer[9]);
+        controlData.leftX  = buffer[5];
+        controlData.leftY  = (uint8_t)(0xFF - signedToU8(buffer[4]));
+        controlData.rightX = buffer[9];
+        controlData.rightY = (uint8_t)(0xFF - signedToU8(buffer[8]));
 
         // R3 appears to set bit 0x10 in byte 10 in your capture
         if (buffer[10] & 0x10) controlData.buttons |= SCE_CTRL_R3;
