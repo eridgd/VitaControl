@@ -36,6 +36,9 @@ Controller *Controller::makeController(uint32_t mac0, uint32_t mac1, int port)
     // Match the VID and PID to a controller type, and create one if it exists
     switch ((id[0] << 16) | id[1])
     {
+        // 8BitDo Lite 2 (D-input)
+        DECL_CONTROLLER(0x2DC8, 0x5112, EightBitDoLite2Controller);
+
         DECL_CONTROLLER(0x054C, 0x0268, DualShock3Controller);
         DECL_CONTROLLER(0x054C, 0x05C4, DualShock4Controller);
         DECL_CONTROLLER(0x054C, 0x09CC, DualShock4Controller);
@@ -49,10 +52,8 @@ Controller *Controller::makeController(uint32_t mac0, uint32_t mac1, int port)
         DECL_CONTROLLER(0x057E, 0x2009, SwitchProController);
     }
 
-    // For unknown controllers, use the diagnostic 8BitDo Lite 2 controller
-    // This will log all data so we can reverse engineer the protocol
-    LOG("  No exact match found - using diagnostic controller for VID:PID 0x%04X:0x%04X\n", id[0], id[1]);
-    return new(Mempool::alloc(sizeof(EightBitDoLite2Controller))) EightBitDoLite2Controller(mac0, mac1, port);
+    LOG("  No matching controller found for VID:PID 0x%04X:0x%04X\n", id[0], id[1]);
+    return nullptr;
 }
 
 int Controller::requestReport(uint8_t type, uint8_t *buffer, size_t length)
