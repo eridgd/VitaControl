@@ -1,1 +1,0 @@
-/usr/local/vitasdk/bin/arm-vita-eabi-gcc  -Wl,-q -O2 -std=c99 -Wall -Wextra -Wl,-z,nocopyreloc CMakeFiles/lite2_mapper.dir/src/main.c.obj CMakeFiles/lite2_mapper.dir/common/debugScreen.c.obj -o lite2_mapper  -lSceCtrl_stub -lSceDisplay_stub -lSceIofilemgr_stub
