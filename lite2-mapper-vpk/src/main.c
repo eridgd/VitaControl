@@ -56,7 +56,7 @@ static int open_out_log(void) {
     const char *hdr =
       "Lite2 Mapper Results\n"
       "Source raw log: " RAW_LOG_PATH "\n"
-      "Format: STEP_NAME\\tRAW_LINE\n\n";
+      "Format: STEP_NAME\tRAW_LINE\n\n";
     sceIoWrite(fd, hdr, (unsigned)strlen(hdr));
   }
   return fd;
@@ -102,11 +102,14 @@ int main(void) {
   psvDebugScreenInit();
 
   clear_screen();
-  psvDebugScreenPrintf("Lite2 Mapper\\n\\n");
-  psvDebugScreenPrintf("This app watches: %s\\n", RAW_LOG_PATH);
-  psvDebugScreenPrintf("and writes:       %s\\n\\n", OUT_LOG_PATH);
-  psvDebugScreenPrintf("Make sure VitaControl is installed and the controller is connected.\\n");
-  psvDebugScreenPrintf("Press X on the Vita to begin.\\n");
+  // Bigger text: 2x font scaling (more readable, fewer chars per line)
+  psvDebugScreenSetFont(psvDebugScreenScaleFont2x(psvDebugScreenGetFont()));
+
+  psvDebugScreenPrintf("Lite2 Mapper\n\n");
+  psvDebugScreenPrintf("This app watches: %s\n", RAW_LOG_PATH);
+  psvDebugScreenPrintf("and writes:       %s\n\n", OUT_LOG_PATH);
+  psvDebugScreenPrintf("Make sure VitaControl is installed and the controller is connected.\n");
+  psvDebugScreenPrintf("Press X on the Vita to begin.\n");
 
   // Wait for Vita X to start (this is the built-in Vita buttons, not the external controller).
   SceCtrlData pad;
@@ -125,9 +128,9 @@ int main(void) {
   int raw_fd = sceIoOpen(RAW_LOG_PATH, SCE_O_RDONLY, 0);
   if (raw_fd < 0) {
     clear_screen();
-    psvDebugScreenPrintf("ERROR: couldn't open %s\\n", RAW_LOG_PATH);
-    psvDebugScreenPrintf("Is VitaControl updated and loaded?\\n");
-    psvDebugScreenPrintf("\\nPress CIRCLE to exit.\\n");
+    psvDebugScreenPrintf("ERROR: couldn't open %s\n", RAW_LOG_PATH);
+    psvDebugScreenPrintf("Is VitaControl updated and loaded?\n");
+    psvDebugScreenPrintf("\nPress CIRCLE to exit.\n");
     while (true) {
       sceCtrlPeekBufferPositive(0, &pad, 1);
       if (pad.buttons & SCE_CTRL_CIRCLE) break;
@@ -144,19 +147,19 @@ int main(void) {
 
   for (int i = 0; i < steps_total; i++) {
     clear_screen();
-    psvDebugScreenPrintf("Step %d / %d\\n\\n", i + 1, steps_total);
-    psvDebugScreenPrintf("%s\\n\\n", STEPS[i].prompt);
-    psvDebugScreenPrintf("Now press the button / do the action on the Lite 2.\\n");
-    psvDebugScreenPrintf("Waiting for a new raw log line...\\n");
+    psvDebugScreenPrintf("Step %d / %d\n\n", i + 1, steps_total);
+    psvDebugScreenPrintf("%s\n\n", STEPS[i].prompt);
+    psvDebugScreenPrintf("Now press the button / do the action on the Lite 2.\n");
+    psvDebugScreenPrintf("Waiting for a new raw log line...\n");
 
     // Wait for the kernel module to append the next delta line.
     wait_for_new_raw_line(raw_fd, line, (int)sizeof(line));
 
     // Show what we captured and write it to the output file.
-    psvDebugScreenPrintf("\\nCaptured:\\n%s\\n", line);
+    psvDebugScreenPrintf("\nCaptured:\n%s\n", line);
     write_step_result(out_fd, STEPS[i].name, line);
 
-    psvDebugScreenPrintf("\\nPress X on the Vita to continue.\\n");
+    psvDebugScreenPrintf("\nPress X on the Vita to continue.\n");
     prev = 0;
     while (true) {
       sceCtrlPeekBufferPositive(0, &pad, 1);
@@ -168,9 +171,9 @@ int main(void) {
   }
 
   clear_screen();
-  psvDebugScreenPrintf("Done!\\n\\n");
-  psvDebugScreenPrintf("Results written to:\\n%s\\n\\n", OUT_LOG_PATH);
-  psvDebugScreenPrintf("Press CIRCLE (Vita) to exit.\\n");
+  psvDebugScreenPrintf("Done!\n\n");
+  psvDebugScreenPrintf("Results written to:\n%s\n\n", OUT_LOG_PATH);
+  psvDebugScreenPrintf("Press CIRCLE (Vita) to exit.\n");
 
   while (true) {
     sceCtrlPeekBufferPositive(0, &pad, 1);
