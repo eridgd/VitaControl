@@ -70,11 +70,92 @@ static Controller *controllers[MAX_CONTROLLERS] = {};
 
 static int g_logFd = -1;
 
+struct RawLogState
+{
+    bool hasLast = false;
+    uint8_t last[64] = {};
+};
+
+static RawLogState g_rawLogStates[MAX_CONTROLLERS] = {};
+
 extern "C" void vitacontrolFileLogWrite(const char *buf, size_t len)
 {
     if (g_logFd < 0 || !buf || len == 0)
         return;
     ksceIoWrite(g_logFd, buf, len);
+}
+
+static inline void appendHex2(char *&p, unsigned v)
+{
+    static const char *hex = "0123456789ABCDEF";
+    *p++ = hex[(v >> 4) & 0xF];
+    *p++ = hex[(v >> 0) & 0xF];
+}
+
+static inline void appendStr(char *&p, const char *s)
+{
+    while (*s) *p++ = *s++;
+}
+
+static void rawLogDeltaForSlot(int slot, const uint8_t *buf, size_t len)
+{
+    if (g_logFd < 0 || slot < 0 || slot >= MAX_CONTROLLERS || !buf || len < 1)
+        return;
+
+    size_t maxBytes = (len > 64) ? 64 : len;
+    RawLogState &st = g_rawLogStates[slot];
+
+    if (!st.hasLast)
+    {
+        for (size_t i = 0; i < maxBytes; i++)
+            st.last[i] = buf[i];
+        st.hasLast = true;
+        return; // don't write a line until we have a delta (keeps file clean for mapper)
+    }
+
+    bool any = false;
+    for (size_t i = 0; i < maxBytes; i++)
+    {
+        if (st.last[i] != buf[i]) { any = true; break; }
+    }
+    if (!any) return;
+
+    // Format (parseable by mapper): id=.. b1=.. b2=.. b3=.. b4=.. b5=.. b6=.. b7=.. ch=[idx:old>new,...]\n
+    char line[256];
+    char *p = line;
+    appendStr(p, "id=");
+    appendHex2(p, buf[0]);
+    if (maxBytes >= 8)
+    {
+        appendStr(p, " b1="); appendHex2(p, buf[1]);
+        appendStr(p, " b2="); appendHex2(p, buf[2]);
+        appendStr(p, " b3="); appendHex2(p, buf[3]);
+        appendStr(p, " b4="); appendHex2(p, buf[4]);
+        appendStr(p, " b5="); appendHex2(p, buf[5]);
+        appendStr(p, " b6="); appendHex2(p, buf[6]);
+        appendStr(p, " b7="); appendHex2(p, buf[7]);
+    }
+    appendStr(p, " ch=[");
+    bool first = true;
+    for (size_t i = 0; i < maxBytes; i++)
+    {
+        if (st.last[i] == buf[i]) continue;
+        if (!first) *p++ = ',';
+        if (i >= 10) *p++ = (char)('0' + (i / 10));
+        *p++ = (char)('0' + (i % 10));
+        *p++ = ':';
+        appendHex2(p, st.last[i]);
+        *p++ = '>';
+        appendHex2(p, buf[i]);
+        first = false;
+    }
+    *p++ = ']';
+    *p++ = '\n';
+    vitacontrolFileLogWrite(line, (size_t)(p - line));
+
+    // update baseline
+    for (size_t i = 0; i < maxBytes; i++)
+        st.last[i] = buf[i];
 }
 
 static inline int clamp(int value, int min, int max)
@@ -338,6 +419,9 @@ static int bluetoothCallback(int notifyId, int notifyCount, int notifyArg, void 
         case 0x0A: // Reply to read request
             if (controllers[cont])
             {
+                // Always emit a raw delta line for the mapper app (works for any controller type)
+                rawLogDeltaForSlot(cont, buffer, sizeof(buffer));
+
                 // Process the received input report and request another
                 controllers[cont]->processReport(buffer, sizeof(buffer));
                 controllers[cont]->requestReport(HID_REQUEST_READ, buffer, sizeof(buffer));
@@ -406,19 +490,19 @@ int moduleStart(SceSize args, void *argp)
 
     // Prepare a persistent log file for diagnostics / mapping sessions.
     // Overwritten on each boot/load.
-    g_logFd = ksceIoOpen("ux0:data/vitacontrol_8bitdo_raw.txt",
+    g_logFd = ksceIoOpen("ux0:data/vitacontrol_mapper_raw.txt",
         SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
     if (g_logFd < 0)
     {
-        LOG("Failed to open ux0:data/vitacontrol_8bitdo_raw.txt (%d)\n", g_logFd);
-        g_logFd = ksceIoOpen("ur0:data/vitacontrol_8bitdo_raw.txt",
+        LOG("Failed to open ux0:data/vitacontrol_mapper_raw.txt (%d)\n", g_logFd);
+        g_logFd = ksceIoOpen("ur0:data/vitacontrol_mapper_raw.txt",
             SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
         if (g_logFd >= 0)
-            LOG("Logging to ur0:data/vitacontrol_8bitdo_raw.txt\n");
+            LOG("Logging to ur0:data/vitacontrol_mapper_raw.txt\n");
     }
     else
     {
-        LOG("Logging to ux0:data/vitacontrol_8bitdo_raw.txt\n");
+        LOG("Logging to ux0:data/vitacontrol_mapper_raw.txt\n");
     }
 
     tai_module_info_t modInfo;

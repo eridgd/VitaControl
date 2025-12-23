@@ -2,7 +2,6 @@
 #include <psp2kern/kernel/debug.h>
 
 #include "eightbitdo_lite2_controller.h"
-#include "../vitacontrol_filelog.h"
 
 // Logging function declaration
 extern "C" {
@@ -11,18 +10,6 @@ extern "C" {
 
 // Logging macro
 #define LOG(...) ksceDebugPrintf("[8BitDo Lite 2] " __VA_ARGS__)
-
-static inline void appendHex2(char *&p, unsigned v)
-{
-    static const char *hex = "0123456789ABCDEF";
-    *p++ = hex[(v >> 4) & 0xF];
-    *p++ = hex[(v >> 0) & 0xF];
-}
-
-static inline void appendStr(char *&p, const char *s)
-{
-    while (*s) *p++ = *s++;
-}
 
 EightBitDoLite2Controller::EightBitDoLite2Controller(uint32_t mac0, uint32_t mac1, int port): Controller(mac0, mac1, port)
 {
@@ -99,41 +86,8 @@ void EightBitDoLite2Controller::processReport(uint8_t *buffer, size_t length)
             }
         }
 
-        // Write a compact, parseable line for the mapping app.
-        // Format:
-        // id=01 b1=.. b2=.. b3=.. b4=.. b5=.. b6=.. b7=.. ch=[idx:old>new,...]\n
-        char line[256];
-        char *p = line;
-        appendStr(p, "id=");
-        appendHex2(p, buffer[0]);
-        if (maxBytes >= 8)
-        {
-            appendStr(p, " b1="); appendHex2(p, buffer[1]);
-            appendStr(p, " b2="); appendHex2(p, buffer[2]);
-            appendStr(p, " b3="); appendHex2(p, buffer[3]);
-            appendStr(p, " b4="); appendHex2(p, buffer[4]);
-            appendStr(p, " b5="); appendHex2(p, buffer[5]);
-            appendStr(p, " b6="); appendHex2(p, buffer[6]);
-            appendStr(p, " b7="); appendHex2(p, buffer[7]);
-        }
-        appendStr(p, " ch=[");
-        bool firstCh = true;
-        for (size_t i = 0; i < maxBytes; i++)
-        {
-            if (last[i] == buffer[i]) continue;
-            if (!firstCh) *p++ = ',';
-            // idx (decimal, 0-63)
-            if (i >= 10) *p++ = (char)('0' + (i / 10));
-            *p++ = (char)('0' + (i % 10));
-            *p++ = ':';
-            appendHex2(p, last[i]);
-            *p++ = '>';
-            appendHex2(p, buffer[i]);
-            firstCh = false;
-        }
-        *p++ = ']';
-        *p++ = '\n';
-        vitacontrolFileLogWrite(line, (size_t)(p - line));
+        // Note: file-based raw logging is now handled centrally in bluetoothCallback so it
+        // works for any controller. We keep kernel printf diagnostics here only.
     }
 
     // Only print the quick interpretation when something changed / snapshot was taken.
