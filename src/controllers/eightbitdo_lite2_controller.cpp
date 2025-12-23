@@ -174,13 +174,13 @@ void EightBitDoLite2Controller::processReport(uint8_t *buffer, size_t length)
 
     // Shoulders / triggers
     //
-    // Vita's primary physical shoulder buttons are effectively LTRIGGER/RTRIGGER.
-    // For best game compatibility, map Lite 2 L1/R1 to Vita LTRIGGER/RTRIGGER.
-    // Then map Lite 2 L2/R2 to Vita L1/R1 as "secondary" shoulders.
-    if (b1 & 0x40) controlData.buttons |= SCE_CTRL_LTRIGGER; // Lite2 L1
-    if (b1 & 0x80) controlData.buttons |= SCE_CTRL_RTRIGGER; // Lite2 R1
-    if (b2 & 0x01) controlData.buttons |= SCE_CTRL_L1;       // Lite2 L2
-    if (b2 & 0x02) controlData.buttons |= SCE_CTRL_R1;       // Lite2 R2
+    // Vita's primary physical shoulders are exposed as LTRIGGER/RTRIGGER.
+    // Since the Lite 2's *big* shoulders are L2/R2, map those to Vita's primary shoulders.
+    // Keep Lite 2 L1/R1 as secondary shoulders (Vita L1/R1).
+    if (b1 & 0x40) controlData.buttons |= SCE_CTRL_L1;       // Lite2 L1 (small)
+    if (b1 & 0x80) controlData.buttons |= SCE_CTRL_R1;       // Lite2 R1 (small)
+    if (b2 & 0x01) controlData.buttons |= SCE_CTRL_LTRIGGER; // Lite2 L2 (big)
+    if (b2 & 0x02) controlData.buttons |= SCE_CTRL_RTRIGGER; // Lite2 R2 (big)
 
     // Start / Select
     if (b2 & 0x08) controlData.buttons |= SCE_CTRL_START;

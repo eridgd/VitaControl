@@ -30,10 +30,10 @@ static const Step STEPS[] = {
   {"DPAD_DOWN",   "Press D-PAD DOWN"},
   {"DPAD_LEFT",   "Press D-PAD LEFT"},
 
-  {"L1",          "Press L1 (expected Vita: LTRIGGER / Left shoulder)"},
-  {"R1",          "Press R1 (expected Vita: RTRIGGER / Right shoulder)"},
-  {"L2",          "Press L2 (expected Vita: L1 / secondary)"},
-  {"R2",          "Press R2 (expected Vita: R1 / secondary)"},
+  {"L1",          "Press L1 (small bumper; expected Vita: L1 / secondary)"},
+  {"R1",          "Press R1 (small bumper; expected Vita: R1 / secondary)"},
+  {"L2",          "Press L2 (big shoulder; expected Vita: LTRIGGER / Left shoulder)"},
+  {"R2",          "Press R2 (big shoulder; expected Vita: RTRIGGER / Right shoulder)"},
 
   {"L3",          "Press L3 (left stick click)"},
   {"R3",          "Press R3 (right stick click)"},
