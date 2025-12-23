@@ -159,13 +159,18 @@ int main(void) {
     psvDebugScreenPrintf("\nCaptured:\n%s\n", line);
     write_step_result(out_fd, STEPS[i].name, line);
 
-    psvDebugScreenPrintf("\nPress X on the Vita to continue.\n");
-    prev = 0;
-    while (true) {
+    // Auto-advance after a short pause so the user can see what was captured.
+    // Allow abort with Vita CIRCLE during the pause.
+    psvDebugScreenPrintf("\nNext step in 1s... (press CIRCLE on Vita to abort)\n");
+    for (int t = 0; t < 1000; t += 16) {
       sceCtrlPeekBufferPositive(0, &pad, 1);
-      uint32_t pressed = pad.buttons & ~prev;
-      prev = pad.buttons;
-      if (pressed & SCE_CTRL_CROSS) break;
+      if (pad.buttons & SCE_CTRL_CIRCLE) {
+        psvDebugScreenPrintf("\nAborted.\n");
+        if (raw_fd >= 0) sceIoClose(raw_fd);
+        if (out_fd >= 0) sceIoClose(out_fd);
+        sceKernelExitProcess(0);
+        return 0;
+      }
       sceKernelDelayThread(16 * 1000);
     }
   }
