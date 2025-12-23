@@ -1,5 +1,6 @@
 #include <psp2/ctrl.h>
 #include <psp2/io/fcntl.h>
+#include <psp2/touch.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 
@@ -60,6 +61,23 @@ static void clear_screen(void) {
   psvDebugScreenClear(0x000000);
 }
 
+static void wait_for_tap(void) {
+  SceTouchData touch;
+  while (true) {
+    sceTouchPeek(SCE_TOUCH_PORT_FRONT, &touch, 1);
+    if (touch.reportNum > 0) {
+      // wait for release to avoid double-trigger
+      while (true) {
+        sceTouchPeek(SCE_TOUCH_PORT_FRONT, &touch, 1);
+        if (touch.reportNum == 0) break;
+        sceKernelDelayThread(16 * 1000);
+      }
+      return;
+    }
+    sceKernelDelayThread(16 * 1000);
+  }
+}
+
 static int open_out_log(void) {
   int fd = sceIoOpen(OUT_LOG_PATH, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
   if (fd >= 0) {
@@ -109,6 +127,7 @@ static void write_step_result(int out_fd, const char *step_name, const char *raw
 
 int main(void) {
   sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
+  sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
   psvDebugScreenInit();
 
   clear_screen();
@@ -119,18 +138,8 @@ int main(void) {
   psvDebugScreenPrintf("This app watches: %s\n", RAW_LOG_PATH);
   psvDebugScreenPrintf("and writes:       %s\n\n", OUT_LOG_PATH);
   psvDebugScreenPrintf("Make sure VitaControl is installed and the controller is connected.\n");
-  psvDebugScreenPrintf("Press X on the Vita to begin.\n");
-
-  // Wait for Vita X to start (this is the built-in Vita buttons, not the external controller).
-  SceCtrlData pad;
-  uint32_t prev = 0;
-  while (true) {
-    sceCtrlPeekBufferPositive(0, &pad, 1);
-    uint32_t pressed = pad.buttons & ~prev;
-    prev = pad.buttons;
-    if (pressed & SCE_CTRL_CROSS) break;
-    sceKernelDelayThread(16 * 1000);
-  }
+  psvDebugScreenPrintf("Tap the front touchscreen to begin.\n");
+  wait_for_tap();
 
   int out_fd = open_out_log();
 
@@ -140,12 +149,8 @@ int main(void) {
     clear_screen();
     psvDebugScreenPrintf("ERROR: couldn't open %s\n", RAW_LOG_PATH);
     psvDebugScreenPrintf("Is VitaControl updated and loaded?\n");
-    psvDebugScreenPrintf("\nPress CIRCLE to exit.\n");
-    while (true) {
-      sceCtrlPeekBufferPositive(0, &pad, 1);
-      if (pad.buttons & SCE_CTRL_CIRCLE) break;
-      sceKernelDelayThread(16 * 1000);
-    }
+    psvDebugScreenPrintf("\nTap the front touchscreen to exit.\n");
+    wait_for_tap();
     sceKernelExitProcess(0);
     return 0;
   }
@@ -174,17 +179,8 @@ int main(void) {
     write_step_result(out_fd, STEPS[i].name, line);
 
     // Auto-advance after a short pause so the user can see what was captured.
-    // Allow abort with Vita CIRCLE during the pause.
-    psvDebugScreenPrintf("\nNext step in 1s... (press CIRCLE on Vita to abort)\n");
+    psvDebugScreenPrintf("\nNext step in 1s...\n");
     for (int t = 0; t < 1000; t += 16) {
-      sceCtrlPeekBufferPositive(0, &pad, 1);
-      if (pad.buttons & SCE_CTRL_CIRCLE) {
-        psvDebugScreenPrintf("\nAborted.\n");
-        if (raw_fd >= 0) sceIoClose(raw_fd);
-        if (out_fd >= 0) sceIoClose(out_fd);
-        sceKernelExitProcess(0);
-        return 0;
-      }
       sceKernelDelayThread(16 * 1000);
     }
   }
@@ -192,13 +188,8 @@ int main(void) {
   clear_screen();
   psvDebugScreenPrintf("Done!\n\n");
   psvDebugScreenPrintf("Results written to:\n%s\n\n", OUT_LOG_PATH);
-  psvDebugScreenPrintf("Press CIRCLE (Vita) to exit.\n");
-
-  while (true) {
-    sceCtrlPeekBufferPositive(0, &pad, 1);
-    if (pad.buttons & SCE_CTRL_CIRCLE) break;
-    sceKernelDelayThread(16 * 1000);
-  }
+  psvDebugScreenPrintf("Tap the front touchscreen to exit.\n");
+  wait_for_tap();
 
   if (raw_fd >= 0) sceIoClose(raw_fd);
   if (out_fd >= 0) sceIoClose(out_fd);
