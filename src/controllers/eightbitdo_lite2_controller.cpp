@@ -199,11 +199,14 @@ void EightBitDoLite2Controller::processReport(uint8_t *buffer, size_t length)
         default: break; // 0x80 (neutral) or unknown
     }
 
-    // Best-effort analog mapping
-    // Reported axes are inverted vs Vita expectations, so invert them.
-    controlData.leftY  = (uint8_t)(0xFF - buffer[4]);
-    controlData.leftX  = (uint8_t)(0xFF - buffer[5]);
-    controlData.rightX = (uint8_t)(0xFF - buffer[6]);
-    controlData.rightY = (uint8_t)(0xFF - buffer[7]);
+    // Analog mapping
+    //
+    // Empirically, the left stick axes bytes are b4 (X) and b5 (Y). Our previous
+    // implementation swapped them, resulting in a 90° rotation (Up->Right, etc).
+    // Map directly; if any axis is still inverted on-device, we can invert just that axis.
+    controlData.leftX  = buffer[4];
+    controlData.leftY  = buffer[5];
+    controlData.rightX = buffer[6];
+    controlData.rightY = buffer[7];
 }
 
