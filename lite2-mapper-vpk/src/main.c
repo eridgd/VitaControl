@@ -152,6 +152,10 @@ int main(void) {
     psvDebugScreenPrintf("Now press the button / do the action on the Lite 2.\n");
     psvDebugScreenPrintf("Waiting for a new raw log line...\n");
 
+    // Flush any pending raw lines (e.g. button release from previous step)
+    // so this step only captures deltas that happen AFTER the prompt.
+    sceIoLseek(raw_fd, 0, SCE_SEEK_END);
+
     // Wait for the kernel module to append the next delta line.
     wait_for_new_raw_line(raw_fd, line, (int)sizeof(line));
 
