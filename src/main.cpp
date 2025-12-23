@@ -9,9 +9,12 @@
 #include <psp2kern/kernel/suspend.h>
 #include <psp2kern/kernel/threadmgr.h>
 #include <psp2kern/kernel/debug.h>
+#include <psp2kern/io/fcntl.h>
+#include <psp2kern/io/stat.h>
 
 #include "controller.h"
 #include "mempool.h"
+#include "vitacontrol_filelog.h"
 
 // Logging function declaration
 extern "C" {
@@ -64,6 +67,15 @@ static SceUID eventFlagUid = -1;
 static SceUID threadUid = -1;
 
 static Controller *controllers[MAX_CONTROLLERS] = {};
+
+static int g_logFd = -1;
+
+extern "C" void vitacontrolFileLogWrite(const char *buf, size_t len)
+{
+    if (g_logFd < 0 || !buf || len == 0)
+        return;
+    ksceIoWrite(g_logFd, buf, len);
+}
 
 static inline int clamp(int value, int min, int max)
 {
@@ -392,6 +404,23 @@ int moduleStart(SceSize args, void *argp)
 {
     LOG("=== VitaControl starting ===\n");
 
+    // Prepare a persistent log file for diagnostics / mapping sessions.
+    // Overwritten on each boot/load.
+    g_logFd = ksceIoOpen("ux0:data/vitacontrol_8bitdo_raw.txt",
+        SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
+    if (g_logFd < 0)
+    {
+        LOG("Failed to open ux0:data/vitacontrol_8bitdo_raw.txt (%d)\n", g_logFd);
+        g_logFd = ksceIoOpen("ur0:data/vitacontrol_8bitdo_raw.txt",
+            SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
+        if (g_logFd >= 0)
+            LOG("Logging to ur0:data/vitacontrol_8bitdo_raw.txt\n");
+    }
+    else
+    {
+        LOG("Logging to ux0:data/vitacontrol_8bitdo_raw.txt\n");
+    }
+
     tai_module_info_t modInfo;
     modInfo.size = sizeof(tai_module_info_t);
 
@@ -453,6 +482,12 @@ int moduleStart(SceSize args, void *argp)
 int moduleStop(SceSize args, void *argp)
 {
     LOG("=== VitaControl stopping ===\n");
+
+    if (g_logFd >= 0)
+    {
+        ksceIoClose(g_logFd);
+        g_logFd = -1;
+    }
 
     // Set the exit flag to stop the callback thread
     if (eventFlagUid > 0)
