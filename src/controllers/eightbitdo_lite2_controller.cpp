@@ -164,11 +164,13 @@ void EightBitDoLite2Controller::processReport(uint8_t *buffer, size_t length)
 
     controlData.buttons = 0;
 
-    // Face buttons (match Vita layout expectations: A=Cross, B=Circle, X=Square, Y=Triangle)
-    if (b1 & 0x01) controlData.buttons |= SCE_CTRL_CROSS;    // FACE_A
-    if (b1 & 0x02) controlData.buttons |= SCE_CTRL_CIRCLE;   // FACE_B
-    if (b1 & 0x08) controlData.buttons |= SCE_CTRL_SQUARE;   // FACE_X
-    if (b1 & 0x10) controlData.buttons |= SCE_CTRL_TRIANGLE; // FACE_Y
+    // Face buttons
+    // Empirically on this controller/mode, A/B and X/Y labels are swapped relative to Vita's
+    // expected layout, so we map accordingly.
+    if (b1 & 0x01) controlData.buttons |= SCE_CTRL_CIRCLE;   // FACE_A
+    if (b1 & 0x02) controlData.buttons |= SCE_CTRL_CROSS;    // FACE_B
+    if (b1 & 0x08) controlData.buttons |= SCE_CTRL_TRIANGLE; // FACE_X
+    if (b1 & 0x10) controlData.buttons |= SCE_CTRL_SQUARE;   // FACE_Y
 
     // Shoulders / triggers
     if (b1 & 0x40) controlData.buttons |= SCE_CTRL_L1;
@@ -198,9 +200,10 @@ void EightBitDoLite2Controller::processReport(uint8_t *buffer, size_t length)
     }
 
     // Best-effort analog mapping
-    controlData.leftY  = buffer[4];
-    controlData.leftX  = buffer[5];
-    controlData.rightX = buffer[6];
-    controlData.rightY = buffer[7];
+    // Reported axes are inverted vs Vita expectations, so invert them.
+    controlData.leftY  = (uint8_t)(0xFF - buffer[4]);
+    controlData.leftX  = (uint8_t)(0xFF - buffer[5]);
+    controlData.rightX = (uint8_t)(0xFF - buffer[6]);
+    controlData.rightY = (uint8_t)(0xFF - buffer[7]);
 }
 
