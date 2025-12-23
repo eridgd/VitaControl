@@ -86,7 +86,10 @@ void SwitchProController::processReport(uint8_t *buffer, size_t length)
 
     // Only process the standard Switch Pro report if it's of the right type
     if (buffer[0] != 0x30)
+    {
+        // Unknown report type for this VID/PID; ignore.
         return;
+    }
 
     // Interpret the data as an input report
     SwitchProReport0x30 *report = (SwitchProReport0x30*)buffer;
