@@ -17,7 +17,74 @@ SwitchProController::SwitchProController(uint32_t mac0, uint32_t mac1, int port)
 
 void SwitchProController::processReport(uint8_t *buffer, size_t length)
 {
-    // Only process the report if it's of the right type
+    if (length < 12)
+        return;
+
+    // 8BitDo Pro 3 (in Switch-compatible mode) can present with the same VID/PID as Switch Pro
+    // but uses a different input report (0x3F). Handle it here.
+    if (buffer[0] == 0x3F)
+    {
+        // Byte layout derived from vitacontrol_mapper_results.txt:
+        //  b1=buf[1] face+shoulders+triggers (bitfield)
+        //  b2=buf[2] select/start/home (bitfield)
+        //  hat=buf[3] neutral=0x08; U=0x00 R=0x02 D=0x04 L=0x06 (diagonals likely 0x01/0x03/0x05/0x07)
+        //  left stick appears to affect buf[4]/buf[5], right stick buf[8]/buf[9]
+        const uint8_t b1  = buffer[1];
+        const uint8_t b2  = buffer[2];
+        const uint8_t hat = buffer[3];
+
+        controlData.buttons = 0;
+
+        // Face buttons (Nintendo layout -> Vita mapping, consistent with existing Switch Pro logic)
+        // From capture: B=0x01, A=0x02, Y=0x04, X=0x08
+        if (b1 & 0x01) controlData.buttons |= SCE_CTRL_CROSS;    // B
+        if (b1 & 0x02) controlData.buttons |= SCE_CTRL_CIRCLE;   // A
+        if (b1 & 0x08) controlData.buttons |= SCE_CTRL_TRIANGLE; // X
+        if (b1 & 0x04) controlData.buttons |= SCE_CTRL_SQUARE;   // Y
+
+        // D-pad / hat
+        switch (hat)
+        {
+            case 0x00: controlData.buttons |= SCE_CTRL_UP; break;
+            case 0x01: controlData.buttons |= (SCE_CTRL_UP | SCE_CTRL_RIGHT); break;
+            case 0x02: controlData.buttons |= SCE_CTRL_RIGHT; break;
+            case 0x03: controlData.buttons |= (SCE_CTRL_RIGHT | SCE_CTRL_DOWN); break;
+            case 0x04: controlData.buttons |= SCE_CTRL_DOWN; break;
+            case 0x05: controlData.buttons |= (SCE_CTRL_DOWN | SCE_CTRL_LEFT); break;
+            case 0x06: controlData.buttons |= SCE_CTRL_LEFT; break;
+            case 0x07: controlData.buttons |= (SCE_CTRL_LEFT | SCE_CTRL_UP); break;
+            default: break; // 0x08 neutral
+        }
+
+        // Shoulders / triggers from capture:
+        // L1=0x10 R1=0x20 L2=0x40 R2=0x80
+        if (b1 & 0x10) controlData.buttons |= SCE_CTRL_L1;
+        if (b1 & 0x20) controlData.buttons |= SCE_CTRL_R1;
+        if (b1 & 0x40) controlData.buttons |= SCE_CTRL_LTRIGGER;
+        if (b1 & 0x80) controlData.buttons |= SCE_CTRL_RTRIGGER;
+
+        // Start/Select/Home from capture: select=0x01 start=0x02 home=0x10
+        if (b2 & 0x02) controlData.buttons |= SCE_CTRL_START;
+        if (b2 & 0x01) controlData.buttons |= SCE_CTRL_SELECT;
+        if (b2 & 0x10) controlData.buttons |= SCE_CTRL_PSBUTTON;
+
+        // Best-effort stick mapping.
+        // Observed changes for left stick in buf[4]/buf[5]. Right stick in buf[8]/buf[9].
+        // Treat X as signed centered at 0 (so +128), and Y as unsigned centered at 0x80, then invert Y for Vita.
+        auto signedToU8 = [](uint8_t v) -> uint8_t { return (uint8_t)(v + 0x80); };
+
+        controlData.leftX  = signedToU8(buffer[4]);
+        controlData.leftY  = (uint8_t)(0xFF - buffer[5]);
+        controlData.rightX = signedToU8(buffer[8]);
+        controlData.rightY = (uint8_t)(0xFF - buffer[9]);
+
+        // R3 appears to set bit 0x10 in byte 10 in your capture
+        if (buffer[10] & 0x10) controlData.buttons |= SCE_CTRL_R3;
+
+        return;
+    }
+
+    // Only process the standard Switch Pro report if it's of the right type
     if (buffer[0] != 0x30)
         return;
 
