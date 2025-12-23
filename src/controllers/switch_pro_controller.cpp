@@ -68,20 +68,18 @@ void SwitchProController::processReport(uint8_t *buffer, size_t length)
         if (b2 & 0x01) controlData.buttons |= SCE_CTRL_SELECT;
         if (b2 & 0x10) controlData.buttons |= SCE_CTRL_PSBUTTON;
 
-        // Stick mapping (initial best-effort).
-        // (We'll refine once basic controls are confirmed stable on-device.)
-        const uint8_t leftX  = (uint8_t)(buffer[4] + 0x80); // signed -> unsigned-ish
-        const uint8_t leftY  = buffer[5];                   // 0x80-centered
-        const uint8_t rightX = (uint8_t)(buffer[8] + 0x80); // signed -> unsigned-ish
-        const uint8_t rightY = buffer[9];                   // 0x80-centered
+        // Stick mapping (calibrated from directional captures):
+        // Left stick uses signed X at byte 4 and signed Y at byte 6.
+        // Right stick uses signed X at byte 8 and signed Y at byte 10.
+        // Convert signed (0x00 = 0, 0x80 = -128) to unsigned-centered by adding 0x80.
+        controlData.leftX  = (uint8_t)(buffer[4] + 0x80);
+        controlData.leftY  = (uint8_t)(buffer[6] + 0x80);
+        controlData.rightX = (uint8_t)(buffer[8] + 0x80);
+        controlData.rightY = (uint8_t)(buffer[10] + 0x80);
 
-        controlData.leftX  = leftX;
-        controlData.leftY  = (uint8_t)(0xFF - leftY);
-        controlData.rightX = rightX;
-        controlData.rightY = (uint8_t)(0xFF - rightY);
-
-        // R3 appears to set bit 0x10 in byte 10 in your capture
-        if (buffer[10] & 0x10) controlData.buttons |= SCE_CTRL_R3;
+        // NOTE: L3/R3 click bits weren't cleanly isolated in the captures (axis bytes changed too),
+        // so we don't map stick clicks yet to avoid false positives. We can add them after one more
+        // mapper run that presses L3/R3 without touching the stick.
 
         return;
     }
