@@ -4,21 +4,30 @@
 
 SwitchProController::SwitchProController(uint32_t mac0, uint32_t mac1, int port): Controller(mac0, mac1, port)
 {
-    // Prepare a write request to switch to standard mode
-    static uint8_t report[12] = {};
-    report[0]  = 0x01;
-    report[1]  = 0x01;
-    report[10] = 0x03;
-    report[11] = 0x30;
-
-    // Send the write request
-    requestReport(HID_REQUEST_WRITE, report, sizeof(report));
+    // Don't send any mode-switching writes here.
+    // Some Switch-compatible controllers (e.g. 8BitDo Pro 3) can disconnect if we send the
+    // "standard mode 0x30" command immediately on connect. We defer until we see input.
 }
 
 void SwitchProController::processReport(uint8_t *buffer, size_t length)
 {
     if (length < 12)
         return;
+
+    // If the device is not already sending standard reports, request standard mode once.
+    // IMPORTANT: do NOT do this for 0x3F (8BitDo Pro 3 mapping) since it already works there.
+    if (!requestedStandardMode && buffer[0] != 0x30 && buffer[0] != 0x3F)
+    {
+        static uint8_t report[12] = {};
+        report[0]  = 0x01;
+        report[1]  = 0x01;
+        report[10] = 0x03;
+        report[11] = 0x30;
+        requestReport(HID_REQUEST_WRITE, report, sizeof(report));
+        requestedStandardMode = true;
+        // Continue; this report likely isn't useful anyway.
+        return;
+    }
 
     // 8BitDo Pro 3 (in Switch-compatible mode) can present with the same VID/PID as Switch Pro
     // but uses a different input report (0x3F). Handle it here.
