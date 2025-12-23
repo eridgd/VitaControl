@@ -77,24 +77,33 @@ void SwitchProController::processReport(uint8_t *buffer, size_t length)
         if (b2 & 0x01) controlData.buttons |= SCE_CTRL_SELECT;
         if (b2 & 0x10) controlData.buttons |= SCE_CTRL_PSBUTTON;
 
-        // Stick mapping (0x3F, calibrated from mapper directional captures):
-        //  - Left stick:  X = b5 (0x80-centered), Y = b4 (signed, 0-centered)
-        //  - Right stick: X = b8 (signed, 0-centered), Y = b10 (signed, 0-centered)
+        // Stick mapping (0x3F):
         //
-        // Add a small deadzone to reduce idle jitter.
-        auto signedToU8 = [](uint8_t v) -> uint8_t { return (uint8_t)(v + 0x80); };
+        // The stable interpretation for Pro 3 is 16-bit little-endian axes:
+        //   LX = b4 | (b5 << 8)
+        //   LY = b6 | (b7 << 8)
+        //   RX = b8 | (b9 << 8)
+        //   RY = b10 | (b11 << 8)
+        //
+        // At rest these MSBs sit around 0x80 (center), matching Vita expectations.
+        // Using only a single byte causes visible jitter; using the MSB of the 16-bit value is stable.
         auto applyDeadzone = [](uint8_t v, uint8_t center, uint8_t dz) -> uint8_t {
             int d = (int)v - (int)center;
             if (d < 0) d = -d;
             return (d <= dz) ? center : v;
         };
 
-        const uint8_t lx = buffer[5];
-        const uint8_t ly = signedToU8(buffer[4]);
-        const uint8_t rx = signedToU8(buffer[8]);
-        const uint8_t ry = signedToU8(buffer[10]);
+        const uint16_t lx16 = (uint16_t)buffer[4]  | ((uint16_t)buffer[5]  << 8);
+        const uint16_t ly16 = (uint16_t)buffer[6]  | ((uint16_t)buffer[7]  << 8);
+        const uint16_t rx16 = (uint16_t)buffer[8]  | ((uint16_t)buffer[9]  << 8);
+        const uint16_t ry16 = (uint16_t)buffer[10] | ((uint16_t)buffer[11] << 8);
 
-        const uint8_t dz = 6;
+        const uint8_t lx = (uint8_t)(lx16 >> 8);
+        const uint8_t ly = (uint8_t)(ly16 >> 8);
+        const uint8_t rx = (uint8_t)(rx16 >> 8);
+        const uint8_t ry = (uint8_t)(ry16 >> 8);
+
+        const uint8_t dz = 8;
         controlData.leftX  = applyDeadzone(lx, 0x80, dz);
         controlData.leftY  = (uint8_t)(0xFF - applyDeadzone(ly, 0x80, dz));
         controlData.rightX = applyDeadzone(rx, 0x80, dz);
