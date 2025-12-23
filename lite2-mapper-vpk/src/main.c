@@ -44,7 +44,16 @@ static const Step STEPS[] = {
   {"HOME",        "Press HOME (expected Vita: PS button) - optional"},
 
   {"STICK_L",     "Move LEFT stick a bit (any direction)"},
+  {"LS_UP",       "LEFT stick: push UP and hold briefly"},
+  {"LS_RIGHT",    "LEFT stick: push RIGHT and hold briefly"},
+  {"LS_DOWN",     "LEFT stick: push DOWN and hold briefly"},
+  {"LS_LEFT",     "LEFT stick: push LEFT and hold briefly"},
+
   {"STICK_R",     "Move RIGHT stick a bit (any direction)"},
+  {"RS_UP",       "RIGHT stick: push UP and hold briefly"},
+  {"RS_RIGHT",    "RIGHT stick: push RIGHT and hold briefly"},
+  {"RS_DOWN",     "RIGHT stick: push DOWN and hold briefly"},
+  {"RS_LEFT",     "RIGHT stick: push LEFT and hold briefly"},
 };
 
 static void clear_screen(void) {
