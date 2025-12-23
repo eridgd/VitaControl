@@ -105,9 +105,9 @@ void SwitchProController::processReport(uint8_t *buffer, size_t length)
 
         const uint8_t dz = 8;
         controlData.leftX  = applyDeadzone(lx, 0x80, dz);
-        controlData.leftY  = (uint8_t)(0xFF - applyDeadzone(ly, 0x80, dz));
+        controlData.leftY  = applyDeadzone(ly, 0x80, dz);
         controlData.rightX = applyDeadzone(rx, 0x80, dz);
-        controlData.rightY = (uint8_t)(0xFF - applyDeadzone(ry, 0x80, dz));
+        controlData.rightY = applyDeadzone(ry, 0x80, dz);
 
         // NOTE: L3/R3 click bits weren't cleanly isolated in the captures (axis bytes changed too),
         // so we don't map stick clicks yet to avoid false positives. We can add them after one more
