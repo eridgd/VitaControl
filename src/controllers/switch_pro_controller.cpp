@@ -77,14 +77,27 @@ void SwitchProController::processReport(uint8_t *buffer, size_t length)
         if (b2 & 0x01) controlData.buttons |= SCE_CTRL_SELECT;
         if (b2 & 0x10) controlData.buttons |= SCE_CTRL_PSBUTTON;
 
-        // Stick mapping (calibrated from directional captures):
-        // Left stick uses signed X at byte 4 and signed Y at byte 6.
-        // Right stick uses signed X at byte 8 and signed Y at byte 10.
-        // Convert signed (0x00 = 0, 0x80 = -128) to unsigned-centered by adding 0x80.
-        controlData.leftX  = (uint8_t)(buffer[4] + 0x80);
-        controlData.leftY  = (uint8_t)(buffer[6] + 0x80);
-        controlData.rightX = (uint8_t)(buffer[8] + 0x80);
-        controlData.rightY = (uint8_t)(buffer[10] + 0x80);
+        // Stick mapping (calibrated from directional captures + on-device behavior):
+        //
+        // On-device testing showed a 90° rotation for both sticks (e.g. Left->Up, Up->Left).
+        // That indicates X/Y are swapped relative to our previous assignment.
+        //
+        // Use signed axes, convert to unsigned by adding 0x80, and match Vita convention by
+        // inverting Y.
+        //
+        // Left stick:
+        //   X comes from byte 6, Y comes from byte 4
+        // Right stick:
+        //   X comes from byte 10, Y comes from byte 8
+        const uint8_t lx = (uint8_t)(buffer[6] + 0x80);
+        const uint8_t ly = (uint8_t)(buffer[4] + 0x80);
+        const uint8_t rx = (uint8_t)(buffer[10] + 0x80);
+        const uint8_t ry = (uint8_t)(buffer[8] + 0x80);
+
+        controlData.leftX  = lx;
+        controlData.leftY  = (uint8_t)(0xFF - ly);
+        controlData.rightX = rx;
+        controlData.rightY = (uint8_t)(0xFF - ry);
 
         // NOTE: L3/R3 click bits weren't cleanly isolated in the captures (axis bytes changed too),
         // so we don't map stick clicks yet to avoid false positives. We can add them after one more
