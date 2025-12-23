@@ -9,7 +9,7 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
   endif()
 endif()
 
-project(lite2_mapper)
+project(vitacontrol_mapper)
 include("${VITASDK}/share/vita.cmake" REQUIRED)
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -std=c99 -Wall -Wextra")
@@ -30,9 +30,9 @@ target_link_libraries(${PROJECT_NAME}
 )
 
 vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME})
-vita_create_vpk(${PROJECT_NAME}.vpk LITE20001 ${PROJECT_NAME}.self
+vita_create_vpk(${PROJECT_NAME}.vpk VITCMAP01 ${PROJECT_NAME}.self
   VERSION "01.00"
-  NAME "Lite2 Mapper"
+  NAME "VitaControl Mapper"
 )
 
 

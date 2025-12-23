@@ -10,8 +10,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#define RAW_LOG_PATH  "ux0:data/vitacontrol_8bitdo_raw.txt"
-#define OUT_LOG_PATH  "ux0:data/lite2_mapper_results.txt"
+#define RAW_LOG_PATH  "ux0:data/vitacontrol_mapper_raw.txt"
+#define OUT_LOG_PATH  "ux0:data/vitacontrol_mapper_results.txt"
 
 typedef struct Step {
   const char *name;
@@ -55,7 +55,7 @@ static int open_out_log(void) {
   int fd = sceIoOpen(OUT_LOG_PATH, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
   if (fd >= 0) {
     const char *hdr =
-      "Lite2 Mapper Results\n"
+      "VitaControl Mapper Results\n"
       "Source raw log: " RAW_LOG_PATH "\n"
       "Format: STEP_NAME\tRAW_LINE\n\n";
     sceIoWrite(fd, hdr, (unsigned)strlen(hdr));
@@ -106,7 +106,7 @@ int main(void) {
   // Bigger text: 2x font scaling (more readable, fewer chars per line)
   psvDebugScreenSetFont(psvDebugScreenScaleFont2x(psvDebugScreenGetFont()));
 
-  psvDebugScreenPrintf("Lite2 Mapper\n\n");
+  psvDebugScreenPrintf("VitaControl Mapper\n\n");
   psvDebugScreenPrintf("This app watches: %s\n", RAW_LOG_PATH);
   psvDebugScreenPrintf("and writes:       %s\n\n", OUT_LOG_PATH);
   psvDebugScreenPrintf("Make sure VitaControl is installed and the controller is connected.\n");
