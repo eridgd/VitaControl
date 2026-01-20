@@ -2,6 +2,14 @@
 
 #include "switch_pro_controller.h"
 
+// Inline deadzone helper for Pro 3 analog sticks
+static inline uint8_t applyDeadzone(uint8_t v, uint8_t center, uint8_t dz)
+{
+    int d = (int)v - (int)center;
+    if (d < 0) d = -d;
+    return (d <= dz) ? center : v;
+}
+
 SwitchProController::SwitchProController(uint32_t mac0, uint32_t mac1, int port): Controller(mac0, mac1, port)
 {
     // Don't send any mode-switching writes here.
@@ -86,22 +94,12 @@ void SwitchProController::processReport(uint8_t *buffer, size_t length)
         //   RY = b10 | (b11 << 8)
         //
         // At rest these MSBs sit around 0x80 (center), matching Vita expectations.
-        // Using only a single byte causes visible jitter; using the MSB of the 16-bit value is stable.
-        auto applyDeadzone = [](uint8_t v, uint8_t center, uint8_t dz) -> uint8_t {
-            int d = (int)v - (int)center;
-            if (d < 0) d = -d;
-            return (d <= dz) ? center : v;
-        };
-
-        const uint16_t lx16 = (uint16_t)buffer[4]  | ((uint16_t)buffer[5]  << 8);
-        const uint16_t ly16 = (uint16_t)buffer[6]  | ((uint16_t)buffer[7]  << 8);
-        const uint16_t rx16 = (uint16_t)buffer[8]  | ((uint16_t)buffer[9]  << 8);
-        const uint16_t ry16 = (uint16_t)buffer[10] | ((uint16_t)buffer[11] << 8);
-
-        const uint8_t lx = (uint8_t)(lx16 >> 8);
-        const uint8_t ly = (uint8_t)(ly16 >> 8);
-        const uint8_t rx = (uint8_t)(rx16 >> 8);
-        const uint8_t ry = (uint8_t)(ry16 >> 8);
+        // We use only the MSB (high byte) as it's stable; the LSB has jitter.
+        // Direct MSB reads avoid unnecessary 16-bit construction and shifting.
+        const uint8_t lx = buffer[5];   // MSB of LX
+        const uint8_t ly = buffer[7];   // MSB of LY
+        const uint8_t rx = buffer[9];   // MSB of RX
+        const uint8_t ry = buffer[11];  // MSB of RY
 
         const uint8_t dz = 3;
         controlData.leftX  = applyDeadzone(lx, 0x80, dz);

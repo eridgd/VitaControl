@@ -418,16 +418,6 @@ static int bluetoothCallback(int notifyId, int notifyCount, int notifyArg, void 
         case 0x0A: // Reply to read request
             if (controllers[cont])
             {
-                // Minimal diagnostics: log report ID changes per slot so we can identify the active report type
-                if (buffer[0] != g_lastReportId[cont])
-                {
-                    g_lastReportId[cont] = buffer[0];
-                    LOG("  Slot %d reportId=0x%02X\n", cont, buffer[0]);
-                }
-
-                // Always emit a raw delta line for the mapper app (works for any controller type)
-                rawLogDeltaForSlot(cont, buffer, sizeof(buffer));
-
                 // Process the received input report and request another
                 controllers[cont]->processReport(buffer, sizeof(buffer));
                 controllers[cont]->requestReport(HID_REQUEST_READ, buffer, sizeof(buffer));
