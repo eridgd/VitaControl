@@ -351,8 +351,6 @@ static int bluetoothCallback(int notifyId, int notifyCount, int notifyArg, void 
     while ((ret = ksceBtReadEvent(&event, 1)) == SCE_BT_ERROR_CB_OVERFLOW);
     if (ret <= 0) return 0;
 
-    LOG("BT Event: ID=0x%02X MAC=%08X:%08X\n", event.id, event.mac0, event.mac1);
-
     int cont = -1;
 
     // Search connected controllers for the device that triggered the event
@@ -496,8 +494,9 @@ int moduleStart(SceSize args, void *argp)
 {
     LOG("=== VitaControl starting ===\n");
 
-    // Prepare a persistent log file for diagnostics / mapping sessions.
-    // Overwritten on each boot/load.
+    // File logging disabled for performance - eliminates buffer comparison and I/O overhead on every input.
+    // Uncomment below to re-enable for diagnostics / mapping sessions.
+    /*
     g_logFd = ksceIoOpen("ux0:data/vitacontrol_mapper_raw.txt",
         SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
     if (g_logFd < 0)
@@ -512,6 +511,7 @@ int moduleStart(SceSize args, void *argp)
     {
         LOG("Logging to ux0:data/vitacontrol_mapper_raw.txt\n");
     }
+    */
 
     tai_module_info_t modInfo;
     modInfo.size = sizeof(tai_module_info_t);

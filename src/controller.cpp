@@ -73,7 +73,6 @@ int Controller::requestReport(uint8_t type, uint8_t *buffer, size_t length)
 
     // Send the request to the controller
     int ret = ksceBtHidTransfer(mac0, mac1, &request);
-    LOG("  HID transfer type=%u len=%u -> %d\n", (unsigned)type, (unsigned)length, ret);
     return ret;
 }
 

@@ -103,7 +103,7 @@ void SwitchProController::processReport(uint8_t *buffer, size_t length)
         const uint8_t rx = (uint8_t)(rx16 >> 8);
         const uint8_t ry = (uint8_t)(ry16 >> 8);
 
-        const uint8_t dz = 8;
+        const uint8_t dz = 3;
         controlData.leftX  = applyDeadzone(lx, 0x80, dz);
         controlData.leftY  = applyDeadzone(ly, 0x80, dz);
         controlData.rightX = applyDeadzone(rx, 0x80, dz);
