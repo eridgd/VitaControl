@@ -38,6 +38,7 @@ app! If you have issues with a controller when it's first paired, it might work 
 * Nintendo Switch Pro Controller
 * 8BitDo Lite 2 Controller (D-input mode)
 * 8BitDo Pro 3 Controller (Switch-compatible mode)
+* 8BitDo Micro Controller (D-input mode)
 
 ### Contributing
 Pull requests are welcome for this project. I can add support for controllers that I have access to and am interested
@@ -57,7 +58,7 @@ The build will generate:
 ### Enhanced Features (This Branch)
 This branch includes several enhancements over the base VitaControl:
 
-* **8BitDo Controller Support**: Full support for 8BitDo Lite 2 and Pro 3 controllers
+* **8BitDo Controller Support**: Full support for 8BitDo Lite 2, Pro 3, and Micro controllers
 * **VitaControl Mapper**: Interactive tool for mapping unsupported controllers
 * **Enhanced Logging**: File-based logging to `ux0:data/vitacontrol_mapper_raw.txt` for diagnostics
 * **Improved Switch Pro Controller**: Better handling of Switch-compatible controllers including 8BitDo Pro 3
