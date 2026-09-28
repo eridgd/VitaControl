@@ -1,6 +1,5 @@
 #include <cstring>
 #include <psp2kern/bt.h>
-#include <psp2kern/kernel/debug.h>
 
 #include "controller.h"
 #include "mempool.h"
@@ -12,14 +11,6 @@
 #include "controllers/switch_pro_controller.h"
 #include "controllers/eightbitdo_lite2_controller.h"
 
-// Logging function declaration
-extern "C" {
-    int ksceDebugPrintf(const char *fmt, ...);
-}
-
-// Logging macro
-#define LOG(...) ksceDebugPrintf("[VitaControl] " __VA_ARGS__)
-
 inline void* operator new(std::size_t, void* __p) throw() { return __p; }
 
 #define DECL_CONTROLLER(vid, pid, name) \
@@ -30,8 +21,6 @@ Controller *Controller::makeController(uint32_t mac0, uint32_t mac1, int port)
     // Get the VID and PID of the device with the given MAC address
     uint16_t id[2];
     ksceBtGetVidPid(mac0, mac1, id);
-
-    LOG("  Device VID:PID = 0x%04X:0x%04X\n", id[0], id[1]);
 
     // Match the VID and PID to a controller type, and create one if it exists
     switch ((id[0] << 16) | id[1])
@@ -52,11 +41,10 @@ Controller *Controller::makeController(uint32_t mac0, uint32_t mac1, int port)
         DECL_CONTROLLER(0x057E, 0x2009, SwitchProController);
     }
 
-    LOG("  No matching controller found for VID:PID 0x%04X:0x%04X\n", id[0], id[1]);
     return nullptr;
 }
 
-int Controller::requestReport(uint8_t type, uint8_t *buffer, size_t length)
+void Controller::requestReport(uint8_t type, uint8_t *buffer, size_t length)
 {
     static SceBtHidRequest request;
     memset(&request, 0, sizeof(SceBtHidRequest));
@@ -72,8 +60,7 @@ int Controller::requestReport(uint8_t type, uint8_t *buffer, size_t length)
     request.next   = &request;
 
     // Send the request to the controller
-    int ret = ksceBtHidTransfer(mac0, mac1, &request);
-    return ret;
+    ksceBtHidTransfer(mac0, mac1, &request);
 }
 
 uint32_t Controller::calculateCrc(uint8_t *buffer, size_t length)

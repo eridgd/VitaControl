@@ -72,7 +72,7 @@ class Controller
 
         static Controller *makeController(uint32_t mac0, uint32_t mac1, int port);
 
-        int requestReport(uint8_t type, uint8_t *buffer, size_t length);
+        void requestReport(uint8_t type, uint8_t *buffer, size_t length);
         virtual void processReport(uint8_t *buffer, size_t length) = 0;
 
         const ControlData *getControlData()  { return &controlData; }
