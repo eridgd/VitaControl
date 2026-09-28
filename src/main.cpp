@@ -484,9 +484,8 @@ int moduleStart(SceSize args, void *argp)
 {
     LOG("=== VitaControl starting ===\n");
 
-    // File logging disabled for performance - eliminates buffer comparison and I/O overhead on every input.
-    // Uncomment below to re-enable for diagnostics / mapping sessions.
-    /*
+    // File logging: only DiagnosticController writes here, so this costs nothing for
+    // already-supported controllers. Needed while mapping a new/unrecognized device.
     g_logFd = ksceIoOpen("ux0:data/vitacontrol_mapper_raw.txt",
         SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
     if (g_logFd < 0)
@@ -501,7 +500,6 @@ int moduleStart(SceSize args, void *argp)
     {
         LOG("Logging to ux0:data/vitacontrol_mapper_raw.txt\n");
     }
-    */
 
     tai_module_info_t modInfo;
     modInfo.size = sizeof(tai_module_info_t);

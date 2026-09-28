@@ -10,6 +10,8 @@
 #include "controllers/xbox_one_controller_2016.h"
 #include "controllers/switch_pro_controller.h"
 #include "controllers/eightbitdo_lite2_controller.h"
+#include "controllers/eightbitdo_micro_controller.h"
+#include "controllers/diagnostic_controller.h"
 
 inline void* operator new(std::size_t, void* __p) throw() { return __p; }
 
@@ -27,6 +29,8 @@ Controller *Controller::makeController(uint32_t mac0, uint32_t mac1, int port)
     {
         // 8BitDo Lite 2 (D-input)
         DECL_CONTROLLER(0x2DC8, 0x5112, EightBitDoLite2Controller);
+        // 8BitDo Micro (D-input)
+        DECL_CONTROLLER(0x2DC8, 0x9020, EightBitDoMicroController);
 
         DECL_CONTROLLER(0x054C, 0x0268, DualShock3Controller);
         DECL_CONTROLLER(0x054C, 0x05C4, DualShock4Controller);
@@ -41,7 +45,9 @@ Controller *Controller::makeController(uint32_t mac0, uint32_t mac1, int port)
         DECL_CONTROLLER(0x057E, 0x2009, SwitchProController);
     }
 
-    return nullptr;
+    // Unknown device: fall back to a diagnostic controller that logs its VID/PID and raw
+    // report deltas to file (see DiagnosticController) instead of silently ignoring it.
+    return new(Mempool::alloc(sizeof(DiagnosticController))) DiagnosticController(mac0, mac1, port);
 }
 
 void Controller::requestReport(uint8_t type, uint8_t *buffer, size_t length)
