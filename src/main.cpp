@@ -166,6 +166,24 @@ static inline int clamp(int value, int min, int max)
     return value;
 }
 
+// The controller in a slot, if it is one that provides input
+static inline Controller *inputController(int slot)
+{
+    Controller *c = controllers[slot];
+    return (c && c->providesInput()) ? c : nullptr;
+}
+
+// The controller that drives the Vita's own port, touch and motion: the first that provides input
+static Controller *primaryController()
+{
+    for (int i = 0; i < MAX_CONTROLLERS; i++)
+    {
+        if (Controller *c = inputController(i))
+            return c;
+    }
+    return nullptr;
+}
+
 static inline int scaleTouchCoord(int coord, int size, int dead, int vitaSize)
 {
     return clamp(((coord - dead) * vitaSize) / (size - dead * 2), 0, vitaSize - 1);
@@ -194,7 +212,7 @@ DECL_FUNC_HOOK(ksceCtrlGetControllerPortInfo, SceCtrlPortInfo *info)
         // Spoof connected controllers to be DualShock 4 controllers
         for (int i = 0; i < MAX_CONTROLLERS; i++)
         {
-            if (controllers[i])
+            if (inputController(i))
                 info->port[i + 1] = SCE_CTRL_TYPE_DS4;
         }
     }
@@ -204,12 +222,13 @@ DECL_FUNC_HOOK(ksceCtrlGetControllerPortInfo, SceCtrlPortInfo *info)
 
 DECL_FUNC_HOOK(sceCtrlGetBatteryInfo, int port, uint8_t *batt)
 {
-    if (port > 0 && controllers[port - 1])
+    Controller *c = (port > 0 && port <= MAX_CONTROLLERS) ? inputController(port - 1) : nullptr;
+    if (c)
     {
         // Override the battery level for connected controllers
         uint8_t data;
         ksceKernelMemcpyUserToKernel(&data, (void*)batt, sizeof(uint8_t));
-        data = controllers[port - 1]->getBatteryLevel();
+        data = c->getBatteryLevel();
         ksceKernelMemcpyKernelToUser((void*)batt, &data, sizeof(uint8_t));
         return 0;
     }
@@ -219,10 +238,10 @@ DECL_FUNC_HOOK(sceCtrlGetBatteryInfo, int port, uint8_t *batt)
 
 static void patchControlData(int port, SceCtrlData *data, int count, bool negative)
 {
-    // Use controller 1 data for port 0, or controllers 1-4 for ports 1-4
-    int cont = (port > 0) ? (port - 1) : 0;
-    if (!controllers[cont]) return;
-    const ControlData *controlData = controllers[cont]->getControlData();
+    // Use the primary controller for port 0, or controllers 1-4 for ports 1-4
+    Controller *c = (port > 0) ? ((port <= MAX_CONTROLLERS) ? inputController(port - 1) : nullptr) : primaryController();
+    if (!c) return;
+    const ControlData *controlData = c->getControlData();
 
     // Forward PS button presses to the kernel so the system menu receives them
     if (controlData->buttons & SCE_CTRL_PSBUTTON)
@@ -277,9 +296,11 @@ DECL_FUNC_HOOK_CTRL(ksceCtrlReadBufferPositiveExt2, false)
 
 static void patchTouchData(int port, SceTouchData *data, int count)
 {
-    // Use controller 1 data for the front touch port
-    if (port != SCE_TOUCH_PORT_FRONT || !controllers[0]) return;
-    const TouchData *touchData = controllers[0]->getTouchData();
+    // Use the primary controller for the front touch port
+    if (port != SCE_TOUCH_PORT_FRONT) return;
+    Controller *c = primaryController();
+    if (!c) return;
+    const TouchData *touchData = c->getTouchData();
 
     for (int i = 0; i < count; i++)
     {
@@ -320,10 +341,11 @@ DECL_FUNC_HOOK(sceMotionGetState, SceMotionState *state)
 {
     int ret = TAI_CONTINUE(int(*)(SceMotionState*), sceMotionGetStateHookRef, state);
 
-    if (ret >= 0 && controllers[0])
+    Controller *c = (ret >= 0) ? primaryController() : nullptr;
+    if (c)
     {
-        // Use controller 1 data for the motion state
-        const MotionState *motionState = controllers[0]->getMotionState();
+        // Use the primary controller for the motion state
+        const MotionState *motionState = c->getMotionState();
 
         // Set the acceleration and velocity from the controller
         SceMotionState data;

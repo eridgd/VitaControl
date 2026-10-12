@@ -37,10 +37,10 @@ enum SceCtrlButtonsExt
 struct ControlData
 {
     uint32_t buttons = 0;
-    uint8_t leftX  = 0;
-    uint8_t leftY  = 0;
-    uint8_t rightX = 0;
-    uint8_t rightY = 0;
+    uint8_t leftX  = 127;
+    uint8_t leftY  = 127;
+    uint8_t rightX = 127;
+    uint8_t rightY = 127;
 };
 
 struct TouchData
@@ -74,6 +74,9 @@ class Controller
 
         void requestReport(uint8_t type, uint8_t *buffer, size_t length);
         virtual void processReport(uint8_t *buffer, size_t length) = 0;
+
+        // False for devices tracked only for logging; the input hooks must ignore them
+        virtual bool providesInput() { return true; }
 
         const ControlData *getControlData()  { return &controlData; }
         const TouchData   *getTouchData()    { return &touchData;   }
