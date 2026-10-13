@@ -33,6 +33,9 @@ Created `EightBitDoLite2Controller` that acts as a catch-all for unknown devices
 - Accepts ANY controller that isn't explicitly recognized
 - Logs all incoming data in detail
 - Provides diagnostic output to help reverse-engineer the protocol
+- **Off by default.** Create an empty `ux0:data/vitacontrol_diagnostics.txt` and reboot to turn it on.
+  While it is off, unknown devices are ignored entirely, so headphones such as AirPods are never
+  sent HID requests and never take a controller slot.
 
 ## How to Use This
 

@@ -362,17 +362,8 @@ DECL_FUNC_HOOK(sceMotionGetState, SceMotionState *state)
     return ret;
 }
 
-static int bluetoothCallback(int notifyId, int notifyCount, int notifyArg, void *common)
+static void handleBluetoothEvent(const SceBtEvent &event)
 {
-    static uint8_t buffer[0x100];
-
-    SceBtEvent event;
-
-    // Read a bluetooth event, or multiple to take care of overflow
-    int ret;
-    while ((ret = ksceBtReadEvent(&event, 1)) == SCE_BT_ERROR_CB_OVERFLOW);
-    if (ret <= 0) return 0;
-
     int cont = -1;
 
     // Search connected controllers for the device that triggered the event
@@ -400,7 +391,7 @@ static int bluetoothCallback(int notifyId, int notifyCount, int notifyArg, void 
         if (cont == -1)
         {
             LOG("  No free controller slots!\n");
-            return 0;
+            return;
         }
     }
 
@@ -423,7 +414,7 @@ static int bluetoothCallback(int notifyId, int notifyCount, int notifyArg, void 
             if (controllers[cont])
             {
                 LOG("  Starting initial HID read...\n");
-                controllers[cont]->requestReport(HID_REQUEST_READ, buffer, sizeof(buffer));
+                controllers[cont]->requestReport(HID_REQUEST_READ, controllers[cont]->getReadBuffer(), controllers[cont]->getReadBufferSize());
             }
             break;
 
@@ -441,22 +432,20 @@ static int bluetoothCallback(int notifyId, int notifyCount, int notifyArg, void 
             if (controllers[cont])
             {
                 // Process the received input report and request another
-                controllers[cont]->processReport(buffer, sizeof(buffer));
-                controllers[cont]->requestReport(HID_REQUEST_READ, buffer, sizeof(buffer));
+                Controller *cur = controllers[cont];
+                cur->processReport(cur->getReadBuffer(), cur->getReadBufferSize());
+                cur->requestReport(HID_REQUEST_READ, cur->getReadBuffer(), cur->getReadBufferSize());
 
                 // Keep the screen awake when inputs are pressed
-                const ControlData *c = controllers[cont]->getControlData();
-                const TouchData *t = controllers[cont]->getTouchData();
+                const ControlData *c = cur->getControlData();
+                const TouchData *t = cur->getTouchData();
                 if (c->buttons || t->touchActive[0] || t->touchActive[1] || AXIS_MOVED(c->leftX) ||
                     AXIS_MOVED(c->leftY) || AXIS_MOVED(c->rightX) || AXIS_MOVED(c->rightY))
                     ksceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
             }
             else
             {
-                // Log raw data even when no controller object exists
-                LOG("  Read report [slot %d, NO CONTROLLER]: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n",
-                    cont, buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5], buffer[6], buffer[7],
-                    buffer[8], buffer[9], buffer[10], buffer[11], buffer[12], buffer[13], buffer[14], buffer[15]);
+                LOG("  Read report [slot %d, NO CONTROLLER]\n", cont);
             }
             break;
 
@@ -464,16 +453,27 @@ static int bluetoothCallback(int notifyId, int notifyCount, int notifyArg, void 
             LOG("  Write request reply (slot %d)\n", cont);
             // Request an initial input report (write/feature requests are typically part of controller init)
             if (controllers[cont])
-                controllers[cont]->requestReport(HID_REQUEST_READ, buffer, sizeof(buffer));
+                controllers[cont]->requestReport(HID_REQUEST_READ, controllers[cont]->getReadBuffer(), controllers[cont]->getReadBufferSize());
             break;
 
         case 0x0C: // Reply to feature request
             LOG("  Feature request reply (slot %d)\n", cont);
             if (controllers[cont])
-                controllers[cont]->requestReport(HID_REQUEST_READ, buffer, sizeof(buffer));
+                controllers[cont]->requestReport(HID_REQUEST_READ, controllers[cont]->getReadBuffer(), controllers[cont]->getReadBufferSize());
             break;
     }
+}
 
+static int bluetoothCallback(int notifyId, int notifyCount, int notifyArg, void *common)
+{
+    SceBtEvent event;
+
+    // Read a bluetooth event, or multiple to take care of overflow
+    int ret;
+    while ((ret = ksceBtReadEvent(&event, 1)) == SCE_BT_ERROR_CB_OVERFLOW);
+    if (ret <= 0) return 0;
+
+    handleBluetoothEvent(event);
     return 0;
 }
 
@@ -522,6 +522,11 @@ int moduleStart(SceSize args, void *argp)
     {
         LOG("Logging to ux0:data/vitacontrol_mapper_raw.txt\n");
     }
+
+    // Create diagnostic controllers for unknown devices only when asked to, by flag file
+    SceIoStat stat;
+    Controller::diagnosticsEnabled = ksceIoGetstat("ux0:data/vitacontrol_diagnostics.txt", &stat) >= 0;
+    LOG("Diagnostic controllers %s\n", Controller::diagnosticsEnabled ? "enabled" : "disabled");
 
     tai_module_info_t modInfo;
     modInfo.size = sizeof(tai_module_info_t);

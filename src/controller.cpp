@@ -15,6 +15,8 @@
 
 inline void* operator new(std::size_t, void* __p) throw() { return __p; }
 
+bool Controller::diagnosticsEnabled = false;
+
 #define DECL_CONTROLLER(vid, pid, name) \
     case ((vid) << 16) | (pid): return new(Mempool::alloc(sizeof(name))) name(mac0, mac1, port)
 
@@ -45,14 +47,17 @@ Controller *Controller::makeController(uint32_t mac0, uint32_t mac1, int port)
         DECL_CONTROLLER(0x057E, 0x2009, SwitchProController);
     }
 
-    // Unknown device: fall back to a diagnostic controller that logs its VID/PID and raw
-    // report deltas to file (see DiagnosticController) instead of silently ignoring it.
+    // Unknown devices (headphones, keyboards, unmapped pads) are ignored unless diagnostics
+    // are enabled, so nothing sends HID requests to a device that may not speak HID.
+    // With diagnostics on, fall back to a controller that logs its VID/PID and raw report deltas.
+    if (!diagnosticsEnabled)
+        return nullptr;
+
     return new(Mempool::alloc(sizeof(DiagnosticController))) DiagnosticController(mac0, mac1, port);
 }
 
 void Controller::requestReport(uint8_t type, uint8_t *buffer, size_t length)
 {
-    static SceBtHidRequest request;
     memset(&request, 0, sizeof(SceBtHidRequest));
 
     // Clear the buffer for read requests

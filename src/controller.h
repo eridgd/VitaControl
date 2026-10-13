@@ -1,6 +1,8 @@
 #ifndef CONTROLLER_H
 #define CONTROLLER_H
 
+#include <psp2kern/bt.h>
+
 enum HidRequestType
 {
     HID_REQUEST_READ = 0,
@@ -72,6 +74,9 @@ class Controller
 
         static Controller *makeController(uint32_t mac0, uint32_t mac1, int port);
 
+        // Unknown devices only get a DiagnosticController when this is set
+        static bool diagnosticsEnabled;
+
         void requestReport(uint8_t type, uint8_t *buffer, size_t length);
         virtual void processReport(uint8_t *buffer, size_t length) = 0;
 
@@ -86,6 +91,9 @@ class Controller
         uint32_t getMac0() { return mac0; }
         uint32_t getMac1() { return mac1; }
 
+        uint8_t *getReadBuffer()     { return readBuffer; }
+        size_t   getReadBufferSize() { return sizeof(readBuffer); }
+
     protected:
         ControlData controlData;
         TouchData   touchData;
@@ -96,6 +104,11 @@ class Controller
 
     private:
         uint32_t mac0, mac1;
+
+        // Each device needs its own request and read buffer: SceBt keeps a pointer to the
+        // request until it completes, so sharing one lets a second device clobber the first
+        SceBtHidRequest request;
+        uint8_t readBuffer[0x100];
 };
 
 #endif // CONTROLLER_H
