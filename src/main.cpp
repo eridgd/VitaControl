@@ -11,6 +11,8 @@
 #include <psp2kern/kernel/debug.h>
 #include <psp2kern/io/fcntl.h>
 #include <psp2kern/io/stat.h>
+#include <psp2kern/kernel/threadmgr/misc.h>
+#include <psp2kern/kernel/sysclib.h>
 
 #include "controller.h"
 #include "mempool.h"
@@ -120,6 +122,29 @@ static void applySniffPatches(const tai_module_info_t &bt)
 
     g_sniffStatus = "applied";
 }
+
+// Optional timing stats, on when ux0:data/vitacontrol_stats_enable.txt exists at boot. The
+// Bluetooth callback only bumps counters; statsThread writes one line per second to
+// ux0:data/vitacontrol_stats.txt, since file I/O in the callback is unsafe.
+struct SlotStats
+{
+    uint32_t reports;   // read replies handled
+    uint32_t changed;   // replies whose first 16 bytes differ from the previous reply
+    uint32_t rttSumUs;  // read request sent -> reply handled
+    uint32_t rttMaxUs;
+    uint32_t gapMaxUs;  // longest time between two replies
+    uint8_t  reportId;
+};
+
+static bool g_statsEnabled = false;
+static volatile bool g_statsStop = false;
+static SceUID statsThreadUid = -1;
+static SlotStats g_slotStats[MAX_CONTROLLERS] = {};
+static uint32_t g_callbacks = 0, g_events = 0, g_maxDrain = 0;
+static uint32_t g_eventIds[32] = {}; // by event id, ids >= 31 share the last bucket
+static SceInt64 g_readSentAt[MAX_CONTROLLERS] = {};
+static SceInt64 g_lastReplyAt[MAX_CONTROLLERS] = {};
+static uint8_t g_lastReport[MAX_CONTROLLERS][16] = {};
 
 static int g_logFd = -1;
 
@@ -415,6 +440,39 @@ DECL_FUNC_HOOK(sceMotionGetState, SceMotionState *state)
     return ret;
 }
 
+static void requestRead(int slot)
+{
+    if (g_statsEnabled)
+        g_readSentAt[slot] = ksceKernelGetSystemTimeWide();
+    controllers[slot]->requestReport(HID_REQUEST_READ, controllers[slot]->getReadBuffer(), controllers[slot]->getReadBufferSize());
+}
+
+static void recordReply(int slot)
+{
+    SceInt64 now = ksceKernelGetSystemTimeWide();
+    SlotStats &st = g_slotStats[slot];
+    const uint8_t *buf = controllers[slot]->getReadBuffer();
+
+    uint32_t rtt = (uint32_t)(now - g_readSentAt[slot]);
+    st.rttSumUs += rtt;
+    if (rtt > st.rttMaxUs) st.rttMaxUs = rtt;
+
+    if (g_lastReplyAt[slot])
+    {
+        uint32_t gap = (uint32_t)(now - g_lastReplyAt[slot]);
+        if (gap > st.gapMaxUs) st.gapMaxUs = gap;
+    }
+    g_lastReplyAt[slot] = now;
+
+    if (memcmp(g_lastReport[slot], buf, sizeof(g_lastReport[slot])) != 0)
+    {
+        st.changed++;
+        memcpy(g_lastReport[slot], buf, sizeof(g_lastReport[slot]));
+    }
+    st.reportId = buf[0];
+    st.reports++;
+}
+
 static void handleBluetoothEvent(const SceBtEvent &event)
 {
     int cont = -1;
@@ -467,7 +525,7 @@ static void handleBluetoothEvent(const SceBtEvent &event)
             if (controllers[cont])
             {
                 LOG("  Starting initial HID read...\n");
-                controllers[cont]->requestReport(HID_REQUEST_READ, controllers[cont]->getReadBuffer(), controllers[cont]->getReadBufferSize());
+                requestRead(cont);
             }
             break;
 
@@ -479,6 +537,7 @@ static void handleBluetoothEvent(const SceBtEvent &event)
                 Mempool::free(controllers[cont]);
                 controllers[cont] = nullptr;
             }
+            g_lastReplyAt[cont] = 0;
             break;
 
         case 0x0A: // Reply to read request
@@ -486,8 +545,9 @@ static void handleBluetoothEvent(const SceBtEvent &event)
             {
                 // Process the received input report and request another
                 Controller *cur = controllers[cont];
+                if (g_statsEnabled) recordReply(cont);
                 cur->processReport(cur->getReadBuffer(), cur->getReadBufferSize());
-                cur->requestReport(HID_REQUEST_READ, cur->getReadBuffer(), cur->getReadBufferSize());
+                requestRead(cont);
 
                 // Keep the screen awake when inputs are pressed
                 const ControlData *c = cur->getControlData();
@@ -506,27 +566,91 @@ static void handleBluetoothEvent(const SceBtEvent &event)
             LOG("  Write request reply (slot %d)\n", cont);
             // Request an initial input report (write/feature requests are typically part of controller init)
             if (controllers[cont])
-                controllers[cont]->requestReport(HID_REQUEST_READ, controllers[cont]->getReadBuffer(), controllers[cont]->getReadBufferSize());
+                requestRead(cont);
             break;
 
         case 0x0C: // Reply to feature request
             LOG("  Feature request reply (slot %d)\n", cont);
             if (controllers[cont])
-                controllers[cont]->requestReport(HID_REQUEST_READ, controllers[cont]->getReadBuffer(), controllers[cont]->getReadBufferSize());
+                requestRead(cont);
             break;
     }
 }
 
 static int bluetoothCallback(int notifyId, int notifyCount, int notifyArg, void *common)
 {
-    SceBtEvent event;
+    // One callback can stand for several queued events, so drain them all. Reading only one
+    // per callback lets events back up while another device (e.g. A2DP headphones) is busy,
+    // which delays controller input.
+    // Bounded so a stuck overflow can never spin the callback thread forever.
+    uint32_t drained = 0;
+    for (int guard = 0; guard < 64; guard++)
+    {
+        SceBtEvent event;
+        int ret = ksceBtReadEvent(&event, 1);
+        if (ret == SCE_BT_ERROR_CB_OVERFLOW) continue;
+        if (ret <= 0) break;
 
-    // Read a bluetooth event, or multiple to take care of overflow
-    int ret;
-    while ((ret = ksceBtReadEvent(&event, 1)) == SCE_BT_ERROR_CB_OVERFLOW);
-    if (ret <= 0) return 0;
+        if (g_statsEnabled)
+        {
+            drained++;
+            g_eventIds[event.id < 31 ? event.id : 31]++;
+        }
+        handleBluetoothEvent(event);
+    }
 
-    handleBluetoothEvent(event);
+    if (g_statsEnabled)
+    {
+        g_callbacks++;
+        g_events += drained;
+        if (drained > g_maxDrain) g_maxDrain = drained;
+    }
+
+    return 0;
+}
+
+static int statsThread(SceSize args, void *argp)
+{
+    SceUID fd = ksceIoOpen("ux0:data/vitacontrol_stats.txt", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0666);
+    if (fd < 0) return 0;
+
+    static char line[512];
+    int hn = snprintf(line, sizeof(line), "sniff_patch=%s\n", g_sniffStatus);
+    ksceIoWrite(fd, line, hn);
+
+    while (!g_statsStop)
+    {
+        ksceKernelDelayThread(1000000);
+
+        // Snapshot and reset; a count racing with the callback is off by one at worst
+        SlotStats slots[MAX_CONTROLLERS];
+        uint32_t ids[32];
+        memcpy(slots, g_slotStats, sizeof(slots));
+        memcpy(ids, g_eventIds, sizeof(ids));
+        uint32_t callbacks = g_callbacks, events = g_events, maxDrain = g_maxDrain;
+        memset(g_slotStats, 0, sizeof(g_slotStats));
+        memset(g_eventIds, 0, sizeof(g_eventIds));
+        g_callbacks = g_events = g_maxDrain = 0;
+
+        int n = snprintf(line, sizeof(line), "t=%u cb=%u ev=%u drain_max=%u ids=",
+            (unsigned)(ksceKernelGetSystemTimeWide() / 1000000), callbacks, events, maxDrain);
+        for (int i = 0; i < 32 && n < (int)sizeof(line) - 64; i++)
+        {
+            if (ids[i])
+                n += snprintf(line + n, sizeof(line) - n, "%02X:%u,", i, ids[i]);
+        }
+        for (int i = 0; i < MAX_CONTROLLERS && n < (int)sizeof(line) - 96; i++)
+        {
+            if (!controllers[i]) continue;
+            const SlotStats &st = slots[i];
+            n += snprintf(line + n, sizeof(line) - n, " s%d[id=%02X rep=%u chg=%u rtt_avg=%u rtt_max=%u gap_max=%u]",
+                i, st.reportId, st.reports, st.changed, st.reports ? st.rttSumUs / st.reports : 0, st.rttMaxUs, st.gapMaxUs);
+        }
+        line[n++] = '\n';
+        ksceIoWrite(fd, line, n);
+    }
+
+    ksceIoClose(fd);
     return 0;
 }
 
@@ -638,6 +762,14 @@ int moduleStart(SceSize args, void *argp)
     threadUid = ksceKernelCreateThread("vitacontrol_thread", callbackThread, 0x3C, 0x1000, 0, 0x10000, 0);
     ksceKernelStartThread(threadUid, 0, nullptr);
 
+    SceIoStat statsStat;
+    g_statsEnabled = ksceIoGetstat("ux0:data/vitacontrol_stats_enable.txt", &statsStat) >= 0;
+    if (g_statsEnabled)
+    {
+        statsThreadUid = ksceKernelCreateThread("vitacontrol_stats", statsThread, 0xA0, 0x2000, 0, 0x10000, 0);
+        ksceKernelStartThread(statsThreadUid, 0, nullptr);
+    }
+
     LOG("=== VitaControl started successfully ===\n");
     return SCE_KERNEL_START_SUCCESS;
 }
@@ -662,6 +794,14 @@ int moduleStop(SceSize args, void *argp)
         ksceKernelWaitThreadEnd(threadUid, nullptr, nullptr);
         ksceKernelDeleteThread(threadUid);
         threadUid = -1;
+    }
+
+    if (statsThreadUid > 0)
+    {
+        g_statsStop = true;
+        ksceKernelWaitThreadEnd(statsThreadUid, nullptr, nullptr);
+        ksceKernelDeleteThread(statsThreadUid);
+        statsThreadUid = -1;
     }
 
     // Clean up the event flag

@@ -37,6 +37,13 @@ Created `EightBitDoLite2Controller` that acts as a catch-all for unknown devices
   While it is off, unknown devices are ignored entirely, so headphones such as AirPods are never
   sent HID requests and never take a controller slot.
 
+### 6. Timing Stats
+- **Off by default.** Create an empty `ux0:data/vitacontrol_stats_enable.txt` and reboot.
+- Writes one line per second to `ux0:data/vitacontrol_stats.txt`: callbacks, events by id,
+  and per controller the reports handled, how many changed, the average and worst time from
+  read request to reply, and the longest gap between replies.
+- The first line says whether the SceBt sniff patch was applied. See `CONTROLLER-LAG.md`.
+
 ## How to Use This
 
 ### Step 1: Deploy the Updated Plugin
