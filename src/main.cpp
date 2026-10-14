@@ -68,6 +68,59 @@ static SceUID threadUid = -1;
 
 static Controller *controllers[MAX_CONTROLLERS] = {};
 
+// SceBt only gives known Sony pads a short sniff interval (18 slots = 11.25 ms) when their HID
+// link comes up; any other controller gets none, so while A2DP is streaming it is starved of
+// airtime (~100 reports/s drops to ~12). Rewrite two of the VID/PID compares in that function
+// so Switch-mode pads (057E:2009) and every 8BitDo (vendor 2DC8) take the same path. See
+// CONTROLLER-LAG.md. Applied only to the 3.65 SceBt build.
+struct SniffPatch
+{
+    uint32_t offset;     // in SceBt segment 0
+    uint32_t size;
+    uint8_t  orig[10];
+    uint8_t  repl[10];
+};
+
+static const SniffPatch g_sniffPatches[] =
+{
+    // movw r1, #0x054C; movt r1, #0x042F  ->  057E:2009 (Switch Pro mode)
+    { 0x13298, 8, { 0x40, 0xF2, 0x4C, 0x51, 0xC0, 0xF2, 0x2F, 0x41 }, { 0x40, 0xF2, 0x7E, 0x51, 0xC2, 0xF2, 0x09, 0x01 } },
+    // movw r2, #0x0E6F; movt r2, #0x0329; cmp r3, r2  ->  uxth r2, r3; movw r1, #0x2DC8; cmp r2, r1; nop
+    // Matches the vendor only, so any 8BitDo in D-input mode. r1 is rewritten on every path after.
+    { 0x132A4, 10, { 0x40, 0xF6, 0x6F, 0x62, 0xC0, 0xF2, 0x29, 0x32, 0x93, 0x42 }, { 0x9A, 0xB2, 0x42, 0xF6, 0xC8, 0x51, 0x8A, 0x42, 0x00, 0xBF } },
+};
+
+#define SCEBT_NID_365 0x67E0C2EB
+#define NUM_SNIFF_PATCHES (sizeof(g_sniffPatches) / sizeof(g_sniffPatches[0]))
+
+static SceUID g_sniffInjectUids[NUM_SNIFF_PATCHES] = {};
+static const char *g_sniffStatus = "not attempted";
+
+static void applySniffPatches(const tai_module_info_t &bt)
+{
+    if (bt.module_nid != SCEBT_NID_365)
+    {
+        g_sniffStatus = "skipped: SceBt is not the 3.65 build";
+        return;
+    }
+
+    // The module NID identifies this exact SceBt binary, so the bytes at these offsets are
+    // known (orig[] documents them; they were checked against a dump of this build).
+
+    for (size_t i = 0; i < NUM_SNIFF_PATCHES; i++)
+    {
+        const SniffPatch &p = g_sniffPatches[i];
+        g_sniffInjectUids[i] = taiInjectDataForKernel(KERNEL_PID, bt.modid, 0, p.offset, p.repl, p.size);
+        if (g_sniffInjectUids[i] < 0)
+        {
+            g_sniffStatus = "failed: inject error";
+            return;
+        }
+    }
+
+    g_sniffStatus = "applied";
+}
+
 static int g_logFd = -1;
 
 struct RawLogState
@@ -537,6 +590,9 @@ int moduleStart(SceSize args, void *argp)
         return SCE_KERNEL_START_FAILED;
     }
 
+    applySniffPatches(modInfo);
+    LOG("Sniff patch: %s\n", g_sniffStatus);
+
     // Hook bluetooth functions
     BIND_FUNC_OFFSET_HOOK(sceBt0x22999C8, KERNEL_PID, modInfo.modid, 0, 0x22999C8 - 0x2280000, 1);
 
@@ -630,6 +686,13 @@ int moduleStop(SceSize args, void *argp)
 
     // Unhook bluetooth functions
     UNBIND_FUNC_HOOK(sceBt0x22999C8);
+
+    // Restore the SceBt sniff policy
+    for (size_t i = 0; i < NUM_SNIFF_PATCHES; i++)
+    {
+        if (g_sniffInjectUids[i] > 0)
+            taiInjectReleaseForKernel(g_sniffInjectUids[i]);
+    }
 
     // Unhook controller info functions
     UNBIND_FUNC_HOOK(ksceCtrlGetControllerPortInfo);
